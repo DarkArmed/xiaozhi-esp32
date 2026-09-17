@@ -1,0 +1,8 @@
+# peppa-v1 raw source SHA-256
+
+- bedtime.gif: `22c44b39aaa54f6557e8fae55f640158d4185def70b4ee20b84bca065560c2d4`
+- dance.gif: `1761a14a71275c65295796976078df27e1bc086bff46a6e498480e3288087359`
+- muddy-puddles-transparent.gif: `223aa19c836b843c8f97910af67da35cbdd0965e61834874cf099cf0aecebefb`
+- peppa-neutral-source.webp: `74976b45c85593e23276cf180f8e4d418978c21d3c538ae7e97737e8016fce85`
+- singing.gif: `e9dedc350fe232de632193bf8b7f25128e86ac5e311378aa0554a1b7ada89a43`
+- travel.gif: `8fd7e4d043f64ced7f0fbd48e7d24839d53bfab19cb89feca395f43e6db81946`

@@ -1,0 +1,116 @@
+{
+  "character_pack": {
+    "version": 1,
+    "pack_id": "peppa-v1",
+    "background": "#DCEFF8",
+    "canvas": {
+      "width": 256,
+      "height": 168,
+      "ground_y": 152,
+      "stage_x": 32
+    },
+    "neutral": {
+      "file": "neutral.png",
+      "format": "png-rgba",
+      "width": 256,
+      "height": 168,
+      "feet_y": 152
+    },
+    "actions": [
+      {
+        "id": "dance",
+        "file": "actions/dance.gif",
+        "format": "gif",
+        "width": 256,
+        "height": 168,
+        "frames": 34,
+        "loop_ms": 2360,
+        "default_playback": {
+          "mode": "repeat",
+          "plays": 2,
+          "max_ms": 6000
+        },
+        "allowed_modes": [
+          "once",
+          "repeat"
+        ],
+        "fallback": "neutral"
+      },
+      {
+        "id": "walk",
+        "file": "actions/walk.gif",
+        "format": "gif",
+        "width": 256,
+        "height": 168,
+        "frames": 18,
+        "loop_ms": 1200,
+        "default_playback": {
+          "mode": "repeat",
+          "plays": 2,
+          "max_ms": 4000
+        },
+        "allowed_modes": [
+          "once",
+          "repeat"
+        ],
+        "fallback": "neutral"
+      },
+      {
+        "id": "sing",
+        "file": "actions/sing.gif",
+        "format": "gif",
+        "width": 256,
+        "height": 168,
+        "frames": 51,
+        "loop_ms": 3540,
+        "default_playback": {
+          "mode": "reply",
+          "plays": 0,
+          "max_ms": 8000
+        },
+        "allowed_modes": [
+          "reply"
+        ],
+        "fallback": "neutral"
+      },
+      {
+        "id": "muddy_jump",
+        "file": "actions/muddy_jump.gif",
+        "format": "gif",
+        "width": 256,
+        "height": 168,
+        "frames": 16,
+        "loop_ms": 1120,
+        "default_playback": {
+          "mode": "repeat",
+          "plays": 2,
+          "max_ms": 4000
+        },
+        "allowed_modes": [
+          "once",
+          "repeat"
+        ],
+        "fallback": "neutral"
+      },
+      {
+        "id": "play_with_george",
+        "file": "actions/play_with_george.gif",
+        "format": "gif",
+        "width": 256,
+        "height": 168,
+        "frames": 12,
+        "loop_ms": 840,
+        "default_playback": {
+          "mode": "repeat",
+          "plays": 2,
+          "max_ms": 4000
+        },
+        "allowed_modes": [
+          "once",
+          "repeat"
+        ],
+        "fallback": "neutral"
+      }
+    ]
+  }
+}

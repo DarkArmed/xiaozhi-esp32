@@ -1,0 +1,402 @@
+{
+  "actions": {
+    "dance": {
+      "id": "dance",
+      "source": "tmp\\peppa-media\\round2\\selected\\dance.gif",
+      "mode": "single",
+      "src_frames": 59,
+      "src_ms": 2360,
+      "src_union_bbox": [
+        53,
+        54,
+        448,
+        409
+      ],
+      "scale": 0.3867,
+      "offset": [
+        31,
+        -6
+      ],
+      "resized_canvas": [
+        186,
+        186
+      ],
+      "frames": 34,
+      "delays_ms": [
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        50
+      ],
+      "loop_ms": 2360,
+      "fps": 14.41,
+      "gif_bytes": 251201,
+      "bytes_per_frame": 7388.3,
+      "gif_verify": {
+        "canvas": [
+          256,
+          168
+        ],
+        "gct": 256,
+        "frames": 34,
+        "loop": 0,
+        "total_ms": 2360
+      },
+      "playback": {
+        "mode": "repeat",
+        "plays": 2,
+        "max_ms": 6000
+      },
+      "allowed_modes": [
+        "once",
+        "repeat"
+      ]
+    },
+    "walk": {
+      "id": "walk",
+      "source": "tmp\\peppa-media\\round2\\selected\\travel.gif",
+      "mode": "single",
+      "src_frames": 30,
+      "src_ms": 1200,
+      "src_union_bbox": [
+        58,
+        58,
+        409,
+        417
+      ],
+      "scale": 0.3565,
+      "offset": [
+        45,
+        3
+      ],
+      "resized_canvas": [
+        171,
+        171
+      ],
+      "frames": 18,
+      "delays_ms": [
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        10
+      ],
+      "loop_ms": 1200,
+      "fps": 15.0,
+      "gif_bytes": 107184,
+      "bytes_per_frame": 5954.7,
+      "gif_verify": {
+        "canvas": [
+          256,
+          168
+        ],
+        "gct": 256,
+        "frames": 18,
+        "loop": 0,
+        "total_ms": 1200
+      },
+      "playback": {
+        "mode": "repeat",
+        "plays": 2,
+        "max_ms": 4000
+      },
+      "allowed_modes": [
+        "once",
+        "repeat"
+      ],
+      "border_strip": {
+        "removed_px_total": 453618,
+        "leftover_white_px_total": 471182
+      }
+    },
+    "sing": {
+      "id": "sing",
+      "source": "tmp\\peppa-media\\round2\\selected\\singing.gif",
+      "mode": "single",
+      "src_frames": 59,
+      "src_ms": 3540,
+      "src_union_bbox": [
+        97,
+        43,
+        419,
+        437
+      ],
+      "scale": 0.3274,
+      "offset": [
+        44,
+        9
+      ],
+      "resized_canvas": [
+        164,
+        164
+      ],
+      "frames": 51,
+      "delays_ms": [
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        40
+      ],
+      "loop_ms": 3540,
+      "fps": 14.41,
+      "gif_bytes": 272060,
+      "bytes_per_frame": 5334.5,
+      "gif_verify": {
+        "canvas": [
+          256,
+          168
+        ],
+        "gct": 256,
+        "frames": 51,
+        "loop": 0,
+        "total_ms": 3540
+      },
+      "playback": {
+        "mode": "reply",
+        "plays": 0,
+        "max_ms": 8000
+      },
+      "allowed_modes": [
+        "reply"
+      ]
+    },
+    "muddy_jump": {
+      "id": "muddy_jump",
+      "source": "tmp\\peppa-media\\round2\\conditional\\muddy-puddles-transparent.gif",
+      "mode": "fit",
+      "src_frames": 28,
+      "src_ms": 1120,
+      "src_union_bbox": [
+        0,
+        124,
+        480,
+        401
+      ],
+      "scale": 0.525,
+      "offset": [
+        2,
+        -59
+      ],
+      "resized_canvas": [
+        252,
+        252
+      ],
+      "frames": 16,
+      "delays_ms": [
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70
+      ],
+      "loop_ms": 1120,
+      "fps": 14.29,
+      "gif_bytes": 119935,
+      "bytes_per_frame": 7495.9,
+      "gif_verify": {
+        "canvas": [
+          256,
+          168
+        ],
+        "gct": 256,
+        "frames": 16,
+        "loop": 0,
+        "total_ms": 1120
+      },
+      "playback": {
+        "mode": "repeat",
+        "plays": 2,
+        "max_ms": 4000
+      },
+      "allowed_modes": [
+        "once",
+        "repeat"
+      ]
+    },
+    "play_with_george": {
+      "id": "play_with_george",
+      "source": "tmp\\peppa-media\\round2\\interaction\\bedtime.gif",
+      "mode": "fit",
+      "src_frames": 21,
+      "src_ms": 840,
+      "src_union_bbox": [
+        84,
+        42,
+        410,
+        442
+      ],
+      "scale": 0.375,
+      "offset": [
+        35,
+        -14
+      ],
+      "resized_canvas": [
+        180,
+        180
+      ],
+      "frames": 12,
+      "delays_ms": [
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70,
+        70
+      ],
+      "loop_ms": 840,
+      "fps": 14.29,
+      "gif_bytes": 79377,
+      "bytes_per_frame": 6614.8,
+      "gif_verify": {
+        "canvas": [
+          256,
+          168
+        ],
+        "gct": 256,
+        "frames": 12,
+        "loop": 0,
+        "total_ms": 840
+      },
+      "playback": {
+        "mode": "repeat",
+        "plays": 2,
+        "max_ms": 4000
+      },
+      "allowed_modes": [
+        "once",
+        "repeat"
+      ]
+    }
+  },
+  "neutral": {
+    "source": "tmp\\peppa-media\\neutral\\peppa-neutral-source.webp",
+    "src_bbox": [
+      271,
+      51,
+      1642,
+      1867
+    ],
+    "scale": 0.07048,
+    "resized": [
+      97,
+      128
+    ],
+    "offset": [
+      80,
+      24
+    ],
+    "file": "neutral.png",
+    "png_bytes": 14212,
+    "a8_full_canvas_bytes": 43008,
+    "a8_bbox_bytes": 12416,
+    "edge_px": 1125,
+    "gray_edge_px": 314
+  }
+}
