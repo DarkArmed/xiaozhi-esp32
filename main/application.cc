@@ -5,6 +5,7 @@
 #include "board.h"
 #include "cjson_utils.h"
 #include "display.h"
+#include "display/character/character_controller.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
 #include "settings.h"
@@ -20,6 +21,30 @@
 #include <limits>
 
 #define TAG "Application"
+
+// Maps a device state onto the character visual state (design section 7).
+// States with dedicated system UIs (provisioning, upgrade, activation,
+// notification playback, errors) collapse to kSystem; the controller is
+// released for those states so the normal UI takes over.
+static CharacterController::VisualState MapDeviceStateToVisual(DeviceState state) {
+    switch (state) {
+        case kDeviceStateIdle:
+            return CharacterController::VisualState::kStandby;
+        case kDeviceStateConnecting:
+            return CharacterController::VisualState::kConnecting;
+        case kDeviceStateListening:
+            return CharacterController::VisualState::kListening;
+        case kDeviceStateSpeaking:
+            return CharacterController::VisualState::kSpeaking;
+        default:
+            return CharacterController::VisualState::kSystem;
+    }
+}
+
+static bool IsConversationState(DeviceState state) {
+    return state == kDeviceStateIdle || state == kDeviceStateConnecting ||
+           state == kDeviceStateListening || state == kDeviceStateSpeaking;
+}
 
 Application::Application() : notify_player_(audio_service_) {
     event_group_ = xEventGroupCreate();
@@ -213,6 +238,7 @@ void Application::Run() {
         }
 
         if (bits & MAIN_EVENT_PLAYBACK_DRAINED) {
+            MaybeNotifyCharacterReplyEnded();
             if (audio_service_.IsPlaybackIdle()) {
                 notify_player_.OnPlaybackDrained();
             }
@@ -282,9 +308,75 @@ void Application::Run() {
                 // SystemInfo::PrintTaskList();
                 // SystemInfo::PrintTaskCpuUsage(pdMS_TO_TICKS(1000));
             }
+
+#if CONFIG_CHARACTER_DEBUG_ACTIONS
+            HandleCharacterDebugTick();
+#endif
         }
     }
 }
+
+void Application::InitCharacterController() {
+#if CONFIG_ENABLE_CHARACTER_DISPLAY
+    auto catalog = Assets::GetInstance().character_catalog_shared();
+    if (catalog == nullptr || !catalog->valid()) {
+        return;  // No pack in assets: keep the built-in emoji path
+    }
+    if (character_controller_ != nullptr) {
+        if (character_catalog_attached_ == catalog) {
+            return;
+        }
+        // The assets partition was re-applied with a new pack; rebuild the
+        // controller so no stale resource pointers survive
+        character_controller_.reset();
+    }
+    auto display = Board::GetInstance().GetDisplay();
+    if (display == nullptr || !display->SupportsCharacterDisplay()) {
+        return;
+    }
+    character_catalog_attached_ = catalog;
+    character_controller_ = std::make_unique<CharacterController>(
+        display, catalog, [this](std::function<void()> callback) {
+            Schedule(std::move(callback));
+        });
+    ESP_LOGI(TAG, "Character controller active (pack %s)",
+             catalog->pack()->pack_id.c_str());
+#endif
+}
+
+void Application::MaybeNotifyCharacterReplyEnded() {
+    if (character_controller_ == nullptr || !character_tts_stop_seen_) {
+        return;
+    }
+    // A temporarily empty queue during streaming is not the end of the reply;
+    // require both the TTS stop and a drained playback queue (section 10.5)
+    if (!audio_service_.IsPlaybackIdle()) {
+        return;
+    }
+    character_tts_stop_seen_ = false;
+    character_controller_->OnReplyEnded();
+}
+
+#if CONFIG_CHARACTER_DEBUG_ACTIONS
+void Application::HandleCharacterDebugTick() {
+    if (character_controller_ == nullptr || GetDeviceState() != kDeviceStateIdle) {
+        return;
+    }
+    if (character_controller_->IsActionPlaying() || clock_ticks_ < 8) {
+        return;
+    }
+    auto catalog = Assets::GetInstance().character_catalog();
+    if (catalog == nullptr || !catalog->valid() || catalog->pack()->actions.empty()) {
+        return;
+    }
+    auto& actions = catalog->pack()->actions;
+    const CharacterActionDef& action = actions[character_debug_index_ % actions.size()];
+    character_debug_index_++;
+    ESP_LOGI(TAG, "[character-debug] playing action %s", action.id.c_str());
+    character_controller_->StartAction(action.id, nullptr);
+    clock_ticks_ = 0;  // Next debug action 8 seconds after this one finishes
+}
+#endif
 
 void Application::HandleNetworkConnectedEvent() {
     ESP_LOGI(TAG, "Network connected");
@@ -624,10 +716,13 @@ void Application::InitializeProtocol() {
             if (strcmp(state->valuestring, "start") == 0) {
                 Schedule([this]() {
                     aborted_ = false;
+                    character_tts_stop_seen_ = false;
                     SetDeviceState(kDeviceStateSpeaking);
                 });
             } else if (strcmp(state->valuestring, "stop") == 0) {
                 Schedule([this]() {
+                    character_tts_stop_seen_ = true;
+                    MaybeNotifyCharacterReplyEnded();
                     if (GetDeviceState() == kDeviceStateSpeaking) {
                         if (listening_mode_ == kListeningModeManualStop) {
                             SetDeviceState(kDeviceStateIdle);
@@ -661,17 +756,27 @@ void Application::InitializeProtocol() {
                     glyphs.clear();
                 }
                 ESP_LOGI(TAG, ">> %s", text->valuestring);
-                Schedule([display, message = std::string(text->valuestring),
+                Schedule([this, display, message = std::string(text->valuestring),
                           glyphs = std::move(glyphs), bpp]() {
                     display->AddTextGlyphs(glyphs, bpp);
                     display->SetChatMessage("user", message.c_str());
+                    // User speech submitted: the visual side enters the
+                    // thinking phase until the reply starts (section 7)
+                    if (character_controller_ != nullptr) {
+                        character_controller_->SetVisualState(
+                            CharacterController::VisualState::kWaiting);
+                    }
                 });
             }
         } else if (strcmp(type->valuestring, "llm") == 0) {
             auto emotion = cJSON_GetObjectItem(root, "emotion");
             if (cJSON_IsString(emotion)) {
-                Schedule([display, emotion_str = std::string(emotion->valuestring)]() {
-                    display->SetEmotion(emotion_str.c_str());
+                Schedule([this, display, emotion_str = std::string(emotion->valuestring)]() {
+                    // In character mode emotions are low-priority hints and do
+                    // not trigger actions (section 7); keep the stage intact
+                    if (character_controller_ == nullptr) {
+                        display->SetEmotion(emotion_str.c_str());
+                    }
                 });
             }
         } else if (strcmp(type->valuestring, "mcp") == 0) {
@@ -1003,6 +1108,20 @@ void Application::HandleStateChangedEvent() {
     auto display = board.GetDisplay();
     auto led = board.GetLed();
     led->OnStateChanged();
+
+    // Character mode lifecycle: lazily attach when a valid pack is available,
+    // release it whenever a dedicated system view owns the screen (design
+    // sections 6/7 - conversation states only)
+    if (!IsConversationState(new_state)) {
+        character_controller_.reset();
+        character_catalog_attached_.reset();
+    } else {
+        InitCharacterController();
+        if (character_controller_ != nullptr) {
+            character_controller_->OnUserInterrupt();
+            character_controller_->SetVisualState(MapDeviceStateToVisual(new_state));
+        }
+    }
 
     switch (new_state) {
         case kDeviceStateUnknown:

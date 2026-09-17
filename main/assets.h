@@ -11,6 +11,8 @@
 #include <map>
 #include <string>
 
+#include "display/character/character_catalog.h"
+
 #if HAVE_LVGL
 #include <spi_flash_mmap.h>
 #endif
@@ -44,6 +46,13 @@ public:
     inline bool partition_valid() const { return partition_valid_; }
     inline std::string default_assets_url() const { return default_assets_url_; }
     inline TextFontCapability text_font_capability() const { return text_font_capability_; }
+    // Optional character pack parsed from the assets index; null when absent
+    // or invalid. Resource pointers stay valid until the next Apply/UnApply;
+    // holders keep the shared_ptr so a concurrent re-apply cannot dangle.
+    inline CharacterCatalog* character_catalog() const { return character_catalog_.get(); }
+    inline std::shared_ptr<CharacterCatalog> character_catalog_shared() const {
+        return character_catalog_;
+    }
 
 private:
     Assets();
@@ -100,6 +109,7 @@ protected:
     bool partition_valid_ = false;
     std::string default_assets_url_;
     TextFontCapability text_font_capability_;
+    std::shared_ptr<CharacterCatalog> character_catalog_;
     srmodel_list_t* models_list_ = nullptr;
 };
 

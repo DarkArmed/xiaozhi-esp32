@@ -10,8 +10,8 @@
       "stage_x": 32
     },
     "neutral": {
-      "file": "neutral.png",
-      "format": "png-rgba",
+      "file": "neutral.bin",
+      "format": "lvgl-bin-argb8888",
       "width": 256,
       "height": 168,
       "feet_y": 152

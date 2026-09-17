@@ -66,15 +66,20 @@ void LvglGif::Start() {
     }
 
     if (timer_) {
+        // Rewind and re-apply the policy for this play instance
+        gd_rewind(gif_);
+        cycles_done_ = 0;
+        instance_start_ = lv_tick_get();
+        finished_notified_ = false;
         playing_ = true;
         loop_waiting_ = false;  // Reset loop waiting state
         last_call_ = lv_tick_get();
         lv_timer_resume(timer_);
         lv_timer_reset(timer_);
-        
+
         // Render first frame
         NextFrame();
-        
+
         ESP_LOGD(TAG, "GIF animation started");
     }
 }
@@ -169,8 +174,38 @@ void LvglGif::SetFrameCallback(std::function<void()> callback) {
     frame_callback_ = callback;
 }
 
+void LvglGif::SetPlayPolicy(const LvglGifPlayPolicy& policy) {
+    policy_ = policy;
+}
+
+void LvglGif::SetFinishedCallback(std::function<void(bool error)> callback) {
+    finished_callback_ = std::move(callback);
+}
+
+void LvglGif::FinishInstance(bool error) {
+    if (finished_notified_) {
+        return;
+    }
+    finished_notified_ = true;
+    playing_ = false;
+    if (timer_) {
+        lv_timer_pause(timer_);
+    }
+    ESP_LOGD(TAG, "GIF play instance finished (error=%d, cycles=%d)", error, cycles_done_);
+    if (finished_callback_) {
+        finished_callback_(error);
+    }
+}
+
 void LvglGif::NextFrame() {
     if (!loaded_ || !gif_ || !playing_) {
+        return;
+    }
+
+    // Policy deadline (monotonic from instance start)
+    if (policy_.mode != LvglGifPlayPolicy::kNative && policy_.max_ms > 0 &&
+        lv_tick_elaps(instance_start_) >= policy_.max_ms) {
+        FinishInstance(false);
         return;
     }
 
@@ -197,33 +232,64 @@ void LvglGif::NextFrame() {
     // Save file position before getting next frame to detect loop
     uint32_t pos_before = gif_->f_rw_p;
 
-    // Get next frame
+    // Get next frame; a negative return means broken data, never treat it as a frame
     int has_next = gd_get_frame(gif_);
+    if (has_next < 0) {
+        ESP_LOGE(TAG, "GIF decode error at offset %u", gif_->f_rw_p);
+        FinishInstance(true);
+        return;
+    }
     if (has_next == 0) {
-        // Animation truly finished (non-infinite loop)
-        playing_ = false;
-        if (timer_) {
-            lv_timer_pause(timer_);
+        // Animation truly finished (non-infinite loop resource).
+        if (policy_.mode == LvglGifPlayPolicy::kNative) {
+            playing_ = false;
+            if (timer_) {
+                lv_timer_pause(timer_);
+            }
+            ESP_LOGD(TAG, "GIF animation completed");
+            return;
         }
-        ESP_LOGD(TAG, "GIF animation completed");
+        // Policy modes rewind on every wrap, so gifdec never exhausts its own
+        // loop counter; reaching here means a malformed resource. Finish
+        // gracefully instead of counting a phantom cycle.
+        FinishInstance(false);
         return;
     }
 
     // Detect loop by checking if file position jumped back (rewound to start)
     // This works for looping GIFs regardless of when loop_count is set
-    if (loop_delay_ms_ > 0 && gif_->f_rw_p < pos_before) {
-        // File position decreased, meaning GIF looped back to beginning
-        // Start waiting before rendering this frame
-        loop_waiting_ = true;
-        loop_wait_start_ = lv_tick_get();
-        ESP_LOGD(TAG, "GIF completed one cycle, waiting %lu ms before next loop", loop_delay_ms_);
-        return;
+    if (gif_->f_rw_p < pos_before) {
+        if (policy_.mode != LvglGifPlayPolicy::kNative) {
+            // One full cycle completed for the policy counter. The current
+            // frame is already frame 0 of the next cycle (keep it rendered).
+            cycles_done_++;
+            if (policy_.mode == LvglGifPlayPolicy::kRepeat &&
+                cycles_done_ >= policy_.plays) {
+                FinishInstance(false);
+                return;
+            }
+            if (policy_.mode == LvglGifPlayPolicy::kOnce) {
+                FinishInstance(false);
+                return;
+            }
+            if (policy_.max_ms > 0 && lv_tick_elaps(instance_start_) >= policy_.max_ms) {
+                FinishInstance(false);
+                return;
+            }
+        } else if (loop_delay_ms_ > 0) {
+            // Native mode legacy behavior: wait before rendering the next cycle
+            loop_waiting_ = true;
+            loop_wait_start_ = lv_tick_get();
+            ESP_LOGD(TAG, "GIF completed one cycle, waiting %lu ms before next loop",
+                     loop_delay_ms_);
+            return;
+        }
     }
 
     // Render current frame
     if (gif_->canvas) {
         gd_render_frame(gif_, gif_->canvas);
-        
+
         // Call frame callback if set
         if (frame_callback_) {
             frame_callback_();

@@ -27,6 +27,9 @@ set(SOURCES "audio/audio_codec.cc"
             "display/lvgl_display/lvgl_image.cc"
             "display/lvgl_display/gif/lvgl_gif.cc"
             "display/lvgl_display/gif/gifdec.c"
+            "display/character/character_catalog.cc"
+            "display/character/character_controller.cc"
+            "display/character/character_view.cc"
             "display/lvgl_display/jpg/image_to_jpeg.cpp"
             "display/lvgl_display/jpg/jpeg_to_image.c"
             "protocols/protocol.cc"
@@ -43,7 +46,7 @@ set(SOURCES "audio/audio_codec.cc"
             "main.cc"
             )
 
-set(INCLUDE_DIRS "." "display" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols")
+set(INCLUDE_DIRS "." "display" "display/character" "display/lvgl_display" "display/lvgl_display/jpg" "audio" "audio/demuxer" "protocols")
 
 # Add board common files
 list(APPEND SOURCES
@@ -1308,6 +1311,18 @@ function(build_default_assets_bin)
     # Add default assets extra files if defined
     if(DEFAULT_ASSETS_EXTRA_FILES)
         list(APPEND BUILD_ARGS "--extra_files" "${DEFAULT_ASSETS_EXTRA_FILES}")
+    endif()
+
+    # Add character pack if the feature is enabled
+    if(CONFIG_ENABLE_CHARACTER_DISPLAY)
+        set(CHARACTER_PACK_DIR "${PROJECT_DIR}/${CONFIG_CHARACTER_PACK_DIR}")
+        list(APPEND BUILD_ARGS "--character_pack_dir" "${CHARACTER_PACK_DIR}")
+        file(GLOB CHARACTER_PACK_FILES CONFIGURE_DEPENDS
+            "${CHARACTER_PACK_DIR}/pack.json"
+            "${CHARACTER_PACK_DIR}/neutral.bin"
+            "${CHARACTER_PACK_DIR}/actions/*.gif"
+        )
+        list(APPEND DEFAULT_ASSETS_DEPENDENCIES ${CHARACTER_PACK_FILES})
     endif()
 
     list(APPEND BUILD_ARGS "--esp_sr_model_path" "${ESP_SR_MODEL_PATH}")

@@ -1088,6 +1088,14 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
         ESP_LOGW(TAG, "SetChatMessage('%s', '%s') called before SetupUI() - message will be lost!",
                  role, content);
     }
+    // Character mode: assistant/user speech becomes the stage subtitle
+    if (character_mode_ && character_view_ != nullptr) {
+        if (strcmp(role, "assistant") == 0 || strcmp(role, "user") == 0) {
+            DisplayLockGuard lock(this);
+            character_view_->SetSubtitle(content);
+        }
+        return;
+    }
     DisplayLockGuard lock(this);
     if (chat_message_label_ == nullptr) {
         if (setup_ui_called_) {
@@ -1118,6 +1126,12 @@ void LcdDisplay::SetChatMessage(const char* role, const char* content) {
 }
 
 void LcdDisplay::ClearChatMessages() {
+    // Character mode: clear the stage subtitle instead of the chat area
+    if (character_mode_ && character_view_ != nullptr) {
+        DisplayLockGuard lock(this);
+        character_view_->SetSubtitle("");
+        return;
+    }
     DisplayLockGuard lock(this);
     // In non-wechat mode, just clear the chat message label and hide the bar
     if (chat_message_label_ != nullptr) {
@@ -1128,6 +1142,62 @@ void LcdDisplay::ClearChatMessages() {
     }
 }
 #endif
+
+bool LcdDisplay::SetCharacterMode(const CharacterPackDef* pack) {
+    if (!setup_ui_called_) {
+        ESP_LOGW(TAG, "SetCharacterMode() called before SetupUI()");
+        return false;
+    }
+    DisplayLockGuard lock(this);
+
+    // Tear down any current character view first (idempotent)
+    character_view_.reset();
+    bool was_active = character_mode_;
+    character_mode_ = false;
+    if (was_active || pack != nullptr) {
+        // Restore visibility flags so both paths start from a known state
+        if (content_ != nullptr) {
+            lv_obj_remove_flag(content_, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (emoji_image_ != nullptr) {
+            lv_obj_add_flag(emoji_image_, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (emoji_label_ != nullptr) {
+            lv_obj_add_flag(emoji_label_, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (gif_controller_) {
+            // Release the emoji GIF while its canvas is still referenced,
+            // inside the display lock (section 11)
+            gif_controller_->Stop();
+            gif_controller_.reset();
+        }
+    }
+    if (pack == nullptr) {
+        return true;
+    }
+
+    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    int top_inset = 24;
+    if (lvgl_theme != nullptr && lvgl_theme->text_font() != nullptr &&
+        lvgl_theme->text_font()->font() != nullptr) {
+        top_inset = lvgl_theme->text_font()->font()->line_height + lvgl_theme->spacing(8);
+    }
+    character_view_ = std::make_unique<CharacterView>(this, pack, top_inset);
+    if (!character_view_->Create()) {
+        ESP_LOGE(TAG, "Failed to create character view");
+        character_view_.reset();
+        return false;
+    }
+    if (content_ != nullptr) {
+        lv_obj_add_flag(content_, LV_OBJ_FLAG_HIDDEN);
+    }
+    character_mode_ = true;
+    character_view_->Show();
+    // Status bar and popups stay above the character stage
+    lv_obj_move_foreground(status_bar_);
+    lv_obj_move_foreground(low_battery_popup_);
+    return true;
+}
 
 void LcdDisplay::SetEmotion(const char* emotion) {
     if (!setup_ui_called_) {

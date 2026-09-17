@@ -33,6 +33,31 @@ config CUSTOM_ASSETS_FILE
         The custom assets file to flash.
         It can be a local file relative to the project directory or a remote url.
 
+config ENABLE_CHARACTER_DISPLAY
+    bool "Enable Character Animation Display"
+    default n
+    help
+        Enable the character stage (static neutral, action GIFs, subtitle) on
+        displays that support it. Requires a character pack inside the assets
+        partition; without a valid pack the device keeps the built-in emoji UI.
+
+config CHARACTER_PACK_DIR
+    depends on ENABLE_CHARACTER_DISPLAY && FLASH_DEFAULT_ASSETS
+    string "Character Pack Source Directory"
+    default "assets/character/peppa-v1"
+    help
+        Repository-relative path to the character pack directory (pack.json
+        plus resource files) staged into the default assets image.
+
+config CHARACTER_DEBUG_ACTIONS
+    bool "Cycle Character Actions For Bench Testing"
+    depends on ENABLE_CHARACTER_DISPLAY
+    default n
+    help
+        While the device is idle, play each pack action in turn so playback
+        policies, neutral fallbacks and interruptions can be verified on the
+        bench without the server-side action integration.
+
 choice
     prompt "Default Language"
     default LANGUAGE_ZH_CN

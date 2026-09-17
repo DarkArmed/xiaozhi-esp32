@@ -1,6 +1,7 @@
 #ifndef LCD_DISPLAY_H
 #define LCD_DISPLAY_H
 
+#include "character/character_view.h"
 #include "gif/lvgl_gif.h"
 #include "lvgl_display.h"
 
@@ -32,6 +33,8 @@ protected:
     esp_timer_handle_t preview_timer_ = nullptr;
     std::unique_ptr<LvglImage> preview_image_cached_ = nullptr;
     bool hide_subtitle_ = false;  // Control whether to hide chat messages/subtitles
+    std::unique_ptr<CharacterView> character_view_;
+    bool character_mode_ = false;
 
     void InitializeLcdThemes();
     virtual bool Lock(int timeout_ms = 0) override;
@@ -54,6 +57,12 @@ public:
 
     // Set whether to hide chat messages/subtitles
     virtual void SetHideSubtitle(bool hide) override;
+
+    // Character display support (design section 6): LVGL-based displays can
+    // host the character stage when a valid pack is provided
+    virtual bool SupportsCharacterDisplay() const override { return true; }
+    virtual bool SetCharacterMode(const CharacterPackDef* pack) override;
+    virtual CharacterView* GetCharacterView() override { return character_view_.get(); }
 };
 
 // SPI LCD display

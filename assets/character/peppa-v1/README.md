@@ -9,7 +9,9 @@ CoreS3 佩奇角色显示 v1（设计文档 `docs/peppa-character-display-design
 pack.json        运行时清单（§12 契约：version/pack_id/background/canvas/neutral/actions）
 report.md        尺寸/容量报告（人读）
 report.json      完整制作记录（变换、帧数、延时、校验结果）
-neutral.png      256x168 RGBA 静态 neutral（固件打包阶段转 LVGL Alpha CBin）
+neutral.png      256x168 RGBA 静态 neutral 源图
+neutral.bin      同图的 LVGL v9 ARGB8888 BIN（固件经 LvglCBinImage 加载；
+                 由 `LVGLImage.py neutral.png --ofmt BIN --cf ARGB8888` 生成）
 actions/*.gif    256x168 全画布 GIF（全局色表 256 色、透明索引 255、disposal=1、loop=0）
 preview/*.png    浅蓝底 #DCEFF8 逐帧 contact sheet（人工检查用，不入固件）
 raw/             原始素材副本 + SHA256SUMS.txt

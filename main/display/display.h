@@ -22,6 +22,8 @@
 
 class LvglFont;
 class LvglImage;
+class CharacterView;
+struct CharacterPackDef;
 
 class Theme {
 public:
@@ -84,6 +86,15 @@ public:
         (void)quality;
         return false;
     }
+    // Character display capability (off by default, section 6 of the character
+    // display design). Entering mode with a validated pack swaps the chat UI
+    // for the character stage; passing nullptr restores the normal UI.
+    virtual bool SupportsCharacterDisplay() const { return false; }
+    virtual bool SetCharacterMode(const CharacterPackDef* pack) {
+        (void)pack;
+        return false;
+    }
+    virtual CharacterView* GetCharacterView() { return nullptr; }
 
     inline int width() const { return width_; }
     inline int height() const { return height_; }

@@ -21,6 +21,9 @@
 #include "device_state_machine.h"
 #include "notify/notify_player.h"
 
+class CharacterController;
+class CharacterCatalog;
+
 // Main event bits
 #define MAIN_EVENT_SCHEDULE             (1 << 0)
 #define MAIN_EVENT_SEND_AUDIO           (1 << 1)
@@ -143,6 +146,12 @@ private:
     NotifyPlayer notify_player_;
     uint32_t notification_playback_id_ = 0;
     std::unique_ptr<Ota> ota_;
+    std::unique_ptr<CharacterController> character_controller_;
+    std::shared_ptr<const CharacterCatalog> character_catalog_attached_;
+    bool character_tts_stop_seen_ = false;  // TTS stop arrived; reply ends when drained
+#if CONFIG_CHARACTER_DEBUG_ACTIONS
+    int character_debug_index_ = 0;
+#endif
 
     std::function<void(const std::string&)> mcp_broadcast_callback_;
 
@@ -157,6 +166,11 @@ private:
 
     // Event handlers
     void HandleStateChangedEvent();
+    void InitCharacterController();
+    void MaybeNotifyCharacterReplyEnded();
+#if CONFIG_CHARACTER_DEBUG_ACTIONS
+    void HandleCharacterDebugTick();
+#endif
     void HandleToggleChatEvent();
     void HandleStartListeningEvent();
     void HandleStopListeningEvent();

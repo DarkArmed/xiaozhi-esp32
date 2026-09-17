@@ -232,6 +232,9 @@ void Assets::LvglStrategy::UnApplyPartition(Assets* assets) {
         mmap_handle_ = 0;
         mmap_root_ = nullptr;
     }
+    // The pack resources live inside the mapping; drop the catalog so nobody
+    // keeps pointers into unmapped flash
+    assets->character_catalog_.reset();
     checksum_valid_ = false;
     assets_.clear();
     (void)assets;  // Unused parameter
@@ -279,6 +282,10 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
     }
 
     Assets::LoadSrmodelsFromIndex(assets, root.get());
+
+    // Drop any previous character pack before re-parsing (section 12: the
+    // resource owner is replaced only outside playback)
+    assets->character_catalog_.reset();
 
     auto& theme_manager = LvglThemeManager::GetInstance();
     auto light_theme = theme_manager.GetTheme("light");
@@ -356,6 +363,27 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
             dark_theme->set_emoji_collection(custom_emoji_collection);
         }
         Board::GetInstance().GetDisplay()->SetEmojiCollection(custom_emoji_collection);
+    }
+
+    // Optional character pack, coexists with emoji_collection (section 12)
+    cJSON* character_pack = cJSON_GetObjectItem(root.get(), "character_pack");
+    if (cJSON_IsObject(character_pack)) {
+        auto resolver = [assets](const std::string& name, const uint8_t** data,
+                                 size_t* size) -> bool {
+            void* ptr = nullptr;
+            size_t len = 0;
+            if (!assets->GetAssetData(name, ptr, len)) {
+                return false;
+            }
+            *data = static_cast<const uint8_t*>(ptr);
+            *size = len;
+            return true;
+        };
+        assets->character_catalog_ =
+            std::shared_ptr<CharacterCatalog>(CharacterCatalog::Parse(character_pack, resolver));
+        if (assets->character_catalog_ == nullptr) {
+            ESP_LOGW(TAG, "character_pack ignored (invalid or incompatible)");
+        }
     }
 
     cJSON* skin = cJSON_GetObjectItem(root.get(), "skin");

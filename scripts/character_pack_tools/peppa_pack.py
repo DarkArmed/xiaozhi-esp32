@@ -686,8 +686,8 @@ def write_pack_json(report):
             "background": "#DCEFF8",
             "canvas": canvas,
             "neutral": {
-                "file": "neutral.png",
-                "format": "png-rgba",  # firmware packaging converts to LVGL alpha CBin
+                "file": "neutral.bin",
+                "format": "lvgl-bin-argb8888",  # converted from neutral.png via Image_Converter/LVGLImage.py
                 "width": CANVAS_W,
                 "height": CANVAS_H,
                 "feet_y": GROUND_Y,

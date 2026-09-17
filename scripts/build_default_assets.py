@@ -300,38 +300,82 @@ def process_emoji_collection(emoji_collection_dir, assets_dir):
     return emoji_list
 
 
+def process_character_pack(pack_dir, assets_dir):
+    """Stage a character pack directory (pack.json + resource files) and return
+    the manifest object for the assets index, or None when unavailable."""
+    if not pack_dir:
+        return None
+
+    pack_json_path = os.path.join(pack_dir, "pack.json")
+    if not os.path.exists(pack_json_path):
+        print(f"Warning: character pack.json not found: {pack_json_path}")
+        return None
+
+    with open(pack_json_path, "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    character_pack = manifest.get("character_pack")
+    if not isinstance(character_pack, dict):
+        print(f"Warning: invalid character pack manifest: {pack_json_path}")
+        return None
+
+    def stage(rel_path):
+        rel_path = rel_path.replace("\\", "/")
+        src = os.path.join(pack_dir, rel_path)
+        dst = os.path.join(assets_dir, rel_path)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        return copy_file(src, dst)
+
+    neutral = character_pack.get("neutral")
+    if not isinstance(neutral, dict) or not stage(neutral.get("file", "")):
+        print(f"Warning: character pack neutral file missing, pack skipped")
+        return None
+
+    staged = 0
+    for action in character_pack.get("actions", []):
+        if isinstance(action, dict) and stage(action.get("file", "")):
+            staged += 1
+    if staged == 0:
+        print("Warning: character pack has no staged actions, pack skipped")
+        return None
+
+    print(f"Processed character pack: {character_pack.get('pack_id')} "
+          f"({staged} actions, neutral {neutral.get('file')})")
+    return character_pack
+
+
 def process_extra_files(extra_files_dir, assets_dir):
     """Process default_assets_extra_files parameter"""
     if not extra_files_dir:
         return []
-    
+
     if not os.path.exists(extra_files_dir):
         print(f"Warning: Extra files directory not found: {extra_files_dir}")
         return []
-    
+
     extra_files_list = []
-    
+
     # Copy each file from input directory to build/assets directory
     for root, dirs, files in os.walk(extra_files_dir):
         for file in files:
             # Skip hidden files and directories
             if file.startswith('.'):
                 continue
-                
+
             # Copy file
             src_file = os.path.join(root, file)
             dst_file = os.path.join(assets_dir, file)
             if copy_file(src_file, dst_file):
                 extra_files_list.append(file)
-    
+
     if extra_files_list:
         print(f"Processed {len(extra_files_list)} extra files from: {extra_files_dir}")
-    
+
     return extra_files_list
 
 
 def generate_index_json(assets_dir, srmodels, text_font, emoji_collection, extra_files=None,
-                        multinet_model_info=None, font_bundle_id=None):
+                        multinet_model_info=None, font_bundle_id=None, character_pack=None):
     """Generate index.json file"""
     index_data = {
         "version": 1
@@ -360,6 +404,9 @@ def generate_index_json(assets_dir, srmodels, text_font, emoji_collection, extra
     
     if emoji_collection:
         index_data["emoji_collection"] = emoji_collection
+
+    if character_pack:
+        index_data["character_pack"] = character_pack
     
     if extra_files:
         index_data["extra_files"] = extra_files
@@ -516,6 +563,25 @@ def read_idf_target_from_sdkconfig(sdkconfig_path):
             if line.startswith("CONFIG_IDF_TARGET="):
                 return line.split("=", 1)[1].strip().strip('"')
     return None
+
+
+def read_character_pack_from_sdkconfig(sdkconfig_path):
+    """Read the character pack configuration from sdkconfig.
+    Returns the configured pack directory when the feature is enabled."""
+    if not os.path.exists(sdkconfig_path):
+        return None
+    enabled = False
+    pack_dir = None
+    with io.open(sdkconfig_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip("\n")
+            if line.startswith("CONFIG_ENABLE_CHARACTER_DISPLAY="):
+                enabled = line.split("=", 1)[1].strip() == "y"
+            elif line.startswith("CONFIG_CHARACTER_PACK_DIR="):
+                pack_dir = line.split("=", 1)[1].strip().strip('"')
+    if not enabled or not pack_dir:
+        return None
+    return pack_dir
 
 
 def read_wakenet_from_sdkconfig(sdkconfig_path):
@@ -810,7 +876,7 @@ def get_emoji_collection_path(default_emoji_collection, noto_fonts_path, project
 def build_assets_integrated(wakenet_model_paths, multinet_model_paths, text_font_path,
                             emoji_collection_path, extra_files_path, output_path,
                             multinet_model_info=None, font_bundle_id=None, max_size=None,
-                            idf_target=None):
+                            idf_target=None, character_pack_dir=None):
     """
     Build assets using integrated functions (no external dependencies)
     """
@@ -835,10 +901,11 @@ def build_assets_integrated(wakenet_model_paths, multinet_model_paths, text_font
         text_font = process_text_font(text_font_path, assets_dir) if text_font_path else None
         emoji_collection = process_emoji_collection(emoji_collection_path, assets_dir) if emoji_collection_path else None
         extra_files = process_extra_files(extra_files_path, assets_dir) if extra_files_path else None
-        
+        character_pack = process_character_pack(character_pack_dir, assets_dir) if character_pack_dir else None
+
         # Generate index.json
         generate_index_json(assets_dir, srmodels, text_font, emoji_collection, extra_files,
-                            multinet_model_info, font_bundle_id)
+                            multinet_model_info, font_bundle_id, character_pack)
         
         # Generate config.json for packing
         config_path = generate_config_json(temp_build_dir, assets_dir)
@@ -891,6 +958,7 @@ def main():
     parser.add_argument('--esp_sr_model_path', help='Path to ESP-SR model directory')
     parser.add_argument('--noto_fonts_path', help='Path to noto-fonts component directory')
     parser.add_argument('--extra_files', help='Path to extra files directory to be included in assets')
+    parser.add_argument('--character_pack_dir', help='Path to character pack directory (pack.json + resources)')
     parser.add_argument('--max_size', type=lambda v: int(v, 0), default=None,
                         help='Fail if assets.bin exceeds this many bytes (decimal or 0x hex)')
     
@@ -971,6 +1039,15 @@ def main():
     
     # Get extra files path if provided
     extra_files_path = args.extra_files
+
+    # Character pack: explicit argument wins, otherwise fall back to sdkconfig
+    character_pack_dir = args.character_pack_dir
+    if not character_pack_dir:
+        character_pack_dir = read_character_pack_from_sdkconfig(args.sdkconfig)
+    if character_pack_dir and not os.path.isabs(character_pack_dir):
+        character_pack_dir = os.path.join(project_root, character_pack_dir)
+    if character_pack_dir:
+        print(f"  character_pack: {character_pack_dir}")
     
     # Read custom wake word configuration
     custom_wake_word_config = read_custom_wake_word_from_sdkconfig(args.sdkconfig)
@@ -998,7 +1075,7 @@ def main():
         print(f"  wake word threshold: {custom_wake_word_config['threshold']}")
     
     # Check if we have anything to build
-    if not wakenet_model_paths and not multinet_model_paths and not text_font_path and not emoji_collection_path and not extra_files_path and not multinet_model_info:
+    if not wakenet_model_paths and not multinet_model_paths and not text_font_path and not emoji_collection_path and not extra_files_path and not multinet_model_info and not character_pack_dir:
         print("Warning: No assets to build (no SR models, text font, emoji collection, extra files, or custom wake word)")
         # Create an empty assets.bin file
         os.makedirs(os.path.dirname(args.output), exist_ok=True)
@@ -1006,12 +1083,12 @@ def main():
             pass  # Create empty file
         print(f"Created empty assets.bin: {args.output}")
         return
-    
+
     # Build the assets
     success = build_assets_integrated(
         wakenet_model_paths, multinet_model_paths, text_font_path, emoji_collection_path,
         extra_files_path, args.output, multinet_model_info, font_bundle_id, args.max_size,
-        idf_target=idf_target)
+        idf_target=idf_target, character_pack_dir=character_pack_dir)
     
     if not success:
         sys.exit(1)
