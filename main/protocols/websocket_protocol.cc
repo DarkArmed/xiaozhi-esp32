@@ -208,6 +208,7 @@ std::string WebsocketProtocol::GetHelloMessage() {
     cJSON_AddBoolToObject(features, "mcp", true);
     cJSON_AddItemToObject(root, "features", features);
     AddTextFontCapabilities(root);
+    AddCharacterAnimationHello(root);
     cJSON_AddStringToObject(root, "transport", "websocket");
     cJSON* audio_params = cJSON_CreateObject();
     cJSON_AddStringToObject(audio_params, "format", "opus");
@@ -250,6 +251,8 @@ void WebsocketProtocol::ParseServerHello(const cJSON* root) {
             server_frame_duration_ = frame_duration->valueint;
         }
     }
+
+    ParseCharacterAnimationHello(root);
 
     xEventGroupSetBits(event_group_handle_, WEBSOCKET_PROTOCOL_SERVER_HELLO_EVENT);
 }

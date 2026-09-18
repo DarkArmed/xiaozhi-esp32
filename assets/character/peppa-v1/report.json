@@ -89,15 +89,15 @@
       "src_frames": 30,
       "src_ms": 1200,
       "src_union_bbox": [
-        58,
-        58,
+        57,
+        57,
         409,
         417
       ],
-      "scale": 0.3565,
+      "scale": 0.3556,
       "offset": [
         45,
-        3
+        4
       ],
       "resized_canvas": [
         171,
@@ -126,8 +126,8 @@
       ],
       "loop_ms": 1200,
       "fps": 15.0,
-      "gif_bytes": 107184,
-      "bytes_per_frame": 5954.7,
+      "gif_bytes": 114087,
+      "bytes_per_frame": 6338.2,
       "gif_verify": {
         "canvas": [
           256,
@@ -148,8 +148,8 @@
         "repeat"
       ],
       "border_strip": {
-        "removed_px_total": 453618,
-        "leftover_white_px_total": 471182
+        "removed_px_total": 365611,
+        "leftover_white_px_total": 14697
       }
     },
     "sing": {

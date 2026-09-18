@@ -66,6 +66,17 @@ public:
     virtual void SendStopListening();
     virtual void SendAbortSpeaking(AbortReason reason);
     virtual void SendMcpMessage(const std::string& message);
+    // Character reset for interrupts that carry no listen message (local VAD
+    // in continuous listening); publishes a new epoch (character design, section 9)
+    virtual void SendCharacterReset();
+
+    // Character animation protocol extension (v1, optional). The capability is
+    // declared in the device hello; playback of actions requires the server
+    // hello to confirm version 1.
+    inline bool character_animation_confirmed() const {
+        return character_animation_confirmed_;
+    }
+    inline uint32_t character_epoch() const { return character_epoch_; }
 
 protected:
     std::function<void(const cJSON* root)> on_incoming_json_;
@@ -87,6 +98,15 @@ protected:
     void SetError(const std::string& message, const std::string& detail);
     virtual bool IsTimeout() const;
     static void AddTextFontCapabilities(cJSON* root);
+    // Character animation parts shared by both transports; the device
+    // capability is derived from the assets character pack
+    static void AddCharacterAnimationHello(cJSON* root);
+    void ParseCharacterAnimationHello(const cJSON* root);
+    // Attaches the current epoch when the capability is declared
+    void AddCharacterAnimationContext(cJSON* root);
+
+    bool character_animation_confirmed_ = false;
+    uint32_t character_epoch_ = 1;
 };
 
 #endif  // PROTOCOL_H

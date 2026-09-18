@@ -177,14 +177,19 @@ def flatten_frames(path):
     return frames
 
 
-def strip_white_border(rgba, min_channel=200):
-    """Remove sticker-style white outline: flood white-ish pixels that touch
-    transparency. Enclosed whites (eye whites) are unreachable and survive."""
+def strip_white_border(rgba, min_channel=235, max_chroma=18):
+    """Remove sticker-style white outline: flood NEUTRAL white pixels that
+    touch transparency. Peppa's pale-pink skin has chroma ~46, so requiring a
+    low chroma keeps skin/arms intact even where they touch the silhouette
+    (regression: min-channel-only matching ate the arm). Enclosed whites (eye
+    whites) are unreachable and survive."""
     arr = np.array(rgba)
     alpha = arr[:, :, 3]
     h, w = alpha.shape
-    rgb_min = arr[:, :, :3].astype(int).min(axis=2)
-    whiteish = (alpha > 0) & (rgb_min >= min_channel)
+    rgb = arr[:, :, :3].astype(int)
+    rgb_min = rgb.min(axis=2)
+    chroma = rgb.max(axis=2) - rgb.min(axis=2)
+    whiteish = (alpha > 0) & (rgb_min >= min_channel) & (chroma <= max_chroma)
     transparent = alpha == 0
     vis = np.zeros((h, w), bool)
     dq = deque()
@@ -205,6 +210,24 @@ def strip_white_border(rgba, min_channel=200):
                 dq.append((ny, nx))
     arr = arr.copy()
     arr[vis] = (0, 0, 0, 0)
+    # anti-halo pass: leftover near-white AA pixels now adjacent to the new
+    # transparency are border residue; skin AA keeps enough chroma to survive
+    for _ in range(2):
+        alpha = arr[:, :, 3]
+        rgb = arr[:, :, :3].astype(int)
+        transparent = alpha == 0
+        adjacent = (
+            np.roll(transparent, 1, 0) | np.roll(transparent, -1, 0)
+            | np.roll(transparent, 1, 1) | np.roll(transparent, -1, 1)
+        )
+        fringe = (
+            (alpha > 0) & adjacent
+            & (rgb.min(axis=2) >= 200)
+            & ((rgb.max(axis=2) - rgb.min(axis=2)) <= 16)
+        )
+        if not fringe.any():
+            break
+        arr[fringe] = (0, 0, 0, 0)
     leftover = int((whiteish & ~vis).sum())
     return Image.fromarray(arr), int(vis.sum()), leftover
 

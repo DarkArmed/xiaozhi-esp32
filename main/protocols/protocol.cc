@@ -23,6 +23,57 @@ void Protocol::AddTextFontCapabilities(cJSON* root) {
     cJSON_AddItemToObject(root, "text_font", font);
 }
 
+void Protocol::AddCharacterAnimationHello(cJSON* root) {
+#if CONFIG_ENABLE_CHARACTER_DISPLAY
+    auto catalog = Assets::GetInstance().character_catalog();
+    if (catalog == nullptr || !catalog->valid()) {
+        return;
+    }
+    const CharacterPackDef* pack = catalog->pack();
+    cJSON* features = cJSON_GetObjectItem(root, "features");
+    if (cJSON_IsObject(features)) {
+        cJSON_AddBoolToObject(features, "character_animation", true);
+    }
+    cJSON* animation = cJSON_CreateObject();
+    cJSON_AddNumberToObject(animation, "version", 1);
+    cJSON_AddStringToObject(animation, "pack_id", pack->pack_id.c_str());
+    cJSON_AddNumberToObject(animation, "epoch", 1);
+    cJSON* actions = cJSON_AddArrayToObject(animation, "actions");
+    for (const auto& action : pack->actions) {
+        cJSON_AddItemToArray(actions, cJSON_CreateString(action.id.c_str()));
+    }
+    cJSON_AddItemToObject(root, "character_animation", animation);
+#endif
+}
+
+void Protocol::ParseCharacterAnimationHello(const cJSON* root) {
+    // The server confirms by echoing version 1; without confirmation the
+    // device stays on local state + neutral and never expects action metadata
+    auto animation = cJSON_GetObjectItem(root, "character_animation");
+    if (!cJSON_IsObject(animation)) {
+        character_animation_confirmed_ = false;
+        return;
+    }
+    auto version = cJSON_GetObjectItem(animation, "version");
+    character_animation_confirmed_ =
+        cJSON_IsNumber(version) && version->valueint == 1;
+    ESP_LOGI(TAG, "Server character animation %s",
+             character_animation_confirmed_ ? "confirmed" : "not confirmed");
+}
+
+void Protocol::AddCharacterAnimationContext(cJSON* root) {
+#if CONFIG_ENABLE_CHARACTER_DISPLAY
+    auto catalog = Assets::GetInstance().character_catalog();
+    if (catalog == nullptr || !catalog->valid()) {
+        return;
+    }
+    cJSON* animation = cJSON_CreateObject();
+    cJSON_AddNumberToObject(animation, "version", 1);
+    cJSON_AddNumberToObject(animation, "epoch", character_epoch_);
+    cJSON_AddItemToObject(root, "character_animation", animation);
+#endif
+}
+
 void Protocol::OnIncomingJson(std::function<void(const cJSON* root)> callback) {
     on_incoming_json_ = callback;
 }
@@ -64,33 +115,70 @@ void Protocol::SetError(const std::string& message, const std::string& detail) {
 }
 
 void Protocol::SendAbortSpeaking(AbortReason reason) {
-    std::string message = "{\"session_id\":\"" + session_id_ + "\",\"type\":\"abort\"";
+    // An abort interrupts the current turn: publish a new capture epoch with it
+    character_epoch_++;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
+    cJSON_AddStringToObject(root, "type", "abort");
     if (reason == kAbortReasonWakeWordDetected) {
-        message += ",\"reason\":\"wake_word_detected\"";
+        cJSON_AddStringToObject(root, "reason", "wake_word_detected");
     }
-    message += "}";
-    SendText(message);
+    AddCharacterAnimationContext(root);
+    auto json_str = cJSON_PrintUnformatted(root);
+    SendText(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
 }
 
 void Protocol::SendWakeWordDetected(const std::string& wake_word) {
-    std::string json = "{\"session_id\":\"" + session_id_ +
-                       "\",\"type\":\"listen\",\"state\":\"detect\",\"text\":\"" + wake_word +
-                       "\"}";
-    SendText(json);
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
+    cJSON_AddStringToObject(root, "type", "listen");
+    cJSON_AddStringToObject(root, "state", "detect");
+    cJSON_AddStringToObject(root, "text", wake_word.c_str());
+    AddCharacterAnimationContext(root);
+    auto json_str = cJSON_PrintUnformatted(root);
+    SendText(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
 }
 
 void Protocol::SendStartListening(ListeningMode mode) {
-    std::string message = "{\"session_id\":\"" + session_id_ + "\"";
-    message += ",\"type\":\"listen\",\"state\":\"start\"";
+    // A new capture window: publish a fresh epoch before the audio starts
+    // (character design, section 9)
+    character_epoch_++;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
+    cJSON_AddStringToObject(root, "type", "listen");
+    cJSON_AddStringToObject(root, "state", "start");
     if (mode == kListeningModeRealtime) {
-        message += ",\"mode\":\"realtime\"";
+        cJSON_AddStringToObject(root, "mode", "realtime");
     } else if (mode == kListeningModeAutoStop) {
-        message += ",\"mode\":\"auto\"";
+        cJSON_AddStringToObject(root, "mode", "auto");
     } else {
-        message += ",\"mode\":\"manual\"";
+        cJSON_AddStringToObject(root, "mode", "manual");
     }
-    message += "}";
-    SendText(message);
+    AddCharacterAnimationContext(root);
+    auto json_str = cJSON_PrintUnformatted(root);
+    SendText(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
+}
+
+void Protocol::SendCharacterReset() {
+    // Local VAD interrupt without a listen message (continuous listening):
+    // invalidate the current visual turn on the server side
+    character_epoch_++;
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "session_id", session_id_.c_str());
+    cJSON_AddStringToObject(root, "type", "character");
+    cJSON_AddStringToObject(root, "state", "reset");
+    cJSON_AddNumberToObject(root, "version", 1);
+    cJSON_AddNumberToObject(root, "epoch", character_epoch_);
+    auto json_str = cJSON_PrintUnformatted(root);
+    SendText(json_str);
+    cJSON_free(json_str);
+    cJSON_Delete(root);
 }
 
 void Protocol::SendStopListening() {

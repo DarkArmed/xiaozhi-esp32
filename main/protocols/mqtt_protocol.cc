@@ -397,6 +397,7 @@ std::string MqttProtocol::GetHelloMessage() {
     cJSON_AddBoolToObject(features, "mcp", true);
     cJSON_AddItemToObject(root, "features", features);
     AddTextFontCapabilities(root);
+    AddCharacterAnimationHello(root);
     cJSON* audio_params = cJSON_CreateObject();
     cJSON_AddStringToObject(audio_params, "format", "opus");
     cJSON_AddNumberToObject(audio_params, "sample_rate", 16000);
@@ -435,6 +436,8 @@ void MqttProtocol::ParseServerHello(const cJSON* root) {
             server_frame_duration_ = frame_duration->valueint;
         }
     }
+
+    ParseCharacterAnimationHello(root);
 
     auto udp = cJSON_GetObjectItem(root, "udp");
     if (!cJSON_IsObject(udp)) {
