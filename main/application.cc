@@ -347,6 +347,27 @@ void Application::InitCharacterController() {
     ESP_LOGI(TAG, "Character controller active (pack %s, valid=%d, view=%p)",
              catalog->pack()->pack_id.c_str(), (int)catalog->valid(),
              (void*)character_controller_->valid());
+
+    // Expose the actions as a device MCP tool so the LLM can trigger
+    // performances through the standard tool path - no server changes needed.
+    // Register only once; the callback resolves the controller at call time.
+    if (!character_tool_added_) {
+        character_tool_added_ = true;
+        McpServer::GetInstance().AddTool(
+            "self.character.play_action",
+            "让屏幕上的角色表演一个动作。仅当用户明确提出想看动作表演时调用，例如'跳个舞''去散步''唱个歌''跳泥坑''和乔治一起玩'。"
+            "用户没有明确要求表演、或明确拒绝（如'不要跳舞''别跳了'）时，不要调用此工具。"
+            "action 参数只能取以下值之一：dance（跳舞）、walk（散步）、sing（唱歌）、"
+            "muddy_jump（跳泥坑）、play_with_george（和乔治玩）。",
+            PropertyList({Property("action", kPropertyTypeString)}),
+            [this](const PropertyList& properties) -> ReturnValue {
+                if (character_controller_ == nullptr) {
+                    return false;  // 当前无角色舞台（无资源包/系统界面中）
+                }
+                return character_controller_->StartAction(
+                    properties["action"].value<std::string>(), nullptr);
+            });
+    }
 #endif
 }
 
@@ -745,11 +766,59 @@ void Application::InitializeProtocol() {
                     if (!TextGlyphPayload::Parse(root, glyphs, bpp)) {
                         glyphs.clear();
                     }
+                    // Optional action metadata on the first sentence of a turn
+                    // (protocol section 9): only when the server confirmed the
+                    // capability and the epoch still matches the current window
+                    std::string action;
+                    CharacterPlaybackDef playback;
+                    if (protocol_ != nullptr && protocol_->character_animation_confirmed()) {
+                        auto animation = cJSON_GetObjectItem(root, "character_animation");
+                        if (cJSON_IsObject(animation)) {
+                            auto epoch = cJSON_GetObjectItem(animation, "epoch");
+                            auto index = cJSON_GetObjectItem(animation, "sentence_index");
+                            auto action_item = cJSON_GetObjectItem(animation, "action");
+                            if (cJSON_IsNumber(epoch) &&
+                                static_cast<uint32_t>(epoch->valuedouble) ==
+                                    protocol_->character_epoch() &&
+                                cJSON_IsNumber(index) && index->valueint == 0 &&
+                                cJSON_IsString(action_item) && action_item->valuestring[0] != '\0') {
+                                action = action_item->valuestring;
+                                auto playback_item = cJSON_GetObjectItem(animation, "playback");
+                                if (cJSON_IsObject(playback_item)) {
+                                    auto mode = cJSON_GetObjectItem(playback_item, "mode");
+                                    auto plays = cJSON_GetObjectItem(playback_item, "plays");
+                                    auto max_ms = cJSON_GetObjectItem(playback_item, "max_ms");
+                                    if (cJSON_IsString(mode)) {
+                                        if (strcmp(mode->valuestring, "once") == 0) {
+                                            playback.mode = CharacterPlaybackDef::kOnce;
+                                        } else if (strcmp(mode->valuestring, "reply") == 0) {
+                                            playback.mode = CharacterPlaybackDef::kReply;
+                                        } else {
+                                            playback.mode = CharacterPlaybackDef::kRepeat;
+                                        }
+                                    }
+                                    if (cJSON_IsNumber(plays) &&
+                                        plays->valuedouble == (double)plays->valueint) {
+                                        playback.plays = plays->valueint;
+                                    }
+                                    if (cJSON_IsNumber(max_ms) &&
+                                        max_ms->valuedouble == (double)max_ms->valueint) {
+                                        playback.max_ms = max_ms->valueint;
+                                    }
+                                }
+                            }
+                        }
+                    }
                     ESP_LOGI(TAG, "<< %s", text->valuestring);
-                    Schedule([display, message = std::string(text->valuestring),
-                              glyphs = std::move(glyphs), bpp]() {
+                    Schedule([this, display, message = std::string(text->valuestring),
+                              glyphs = std::move(glyphs), bpp, action = std::move(action),
+                              playback]() {
                         display->AddTextGlyphs(glyphs, bpp);
                         display->SetChatMessage("assistant", message.c_str());
+                        if (!action.empty() && character_controller_ != nullptr) {
+                            // StartAction re-validates the policy against the pack
+                            character_controller_->StartAction(action, &playback);
+                        }
                     });
                 }
             }

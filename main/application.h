@@ -148,6 +148,7 @@ private:
     std::unique_ptr<Ota> ota_;
     std::unique_ptr<CharacterController> character_controller_;
     std::shared_ptr<const CharacterCatalog> character_catalog_attached_;
+    bool character_tool_added_ = false;     // MCP tool registered once
     bool character_tts_stop_seen_ = false;  // TTS stop arrived; reply ends when drained
 #if CONFIG_CHARACTER_DEBUG_ACTIONS
     int character_debug_index_ = 0;
