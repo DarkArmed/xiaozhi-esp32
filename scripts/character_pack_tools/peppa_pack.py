@@ -353,13 +353,13 @@ def apply_palette(frames, palette):
 
 def roundtrip_check(path, p_frames):
     """Decode the produced GIF with PIL and require exact per-frame equality
-    with the accumulated canvas (transparent index = keep previous content).
+    with the disposal=2 canvas (clear to transparent, then draw the frame).
     Guards against any LZW encoder bug."""
     im = Image.open(path)
-    canvas = np.zeros((p_frames[0].size[1], p_frames[0].size[0], 4), np.uint8)
     for i, pf in enumerate(p_frames):
         pal = np.frombuffer(pf.info["palette"], np.uint8).reshape(256, 3)
         idx = np.array(pf)
+        canvas = np.zeros((*idx.shape, 4), np.uint8)
         op = idx != 255
         canvas[op, :3] = pal[idx[op]]
         canvas[op, 3] = 255
@@ -433,22 +433,25 @@ def _sub_blocks(data):
 
 def encode_gif(p_frames, delays, out_path):
     """Hand-rolled GIF89a encoder: exactly one global color table, full-canvas
-    frames, disposal=1, explicit NETSCAPE loop ext (format info only - playback
-    policy is enforced by the app), transparency index 255."""
+    frames, disposal=2 (restore to background = transparent, so pixels the
+    character moved away from are cleared on cumulative canvas decoders like
+    gifdec), explicit NETSCAPE loop ext (format info only - playback policy is
+    enforced by the app), transparency index 255."""
     w, h = p_frames[0].size
     palette = bytes(p_frames[0].info["palette"])  # 256*3, set by apply_palette
     assert len(palette) == 768
 
     out = bytearray()
     out += b"GIF89a"
-    out += struct.pack("<HHBBB", w, h, 0xF7, 0, 0)  # GCT flag, 256 colors
+    # GCT flag, 256 colors, bg color index = transparent index 255
+    out += struct.pack("<HHBBB", w, h, 0xF7, 255, 0)
     out += palette
     # NETSCAPE2.0 loop forever (loop count 0); app policy overrides anyway
     out += b"\x21\xFF\x0BNETSCAPE2.0\x03\x01\x00\x00\x00"
     for f, d in zip(p_frames, delays):
         delay_units = max(1, round(d / 10)) & 0xFFFF
-        # [21 F9 04] [flags: disposal=1 | transparency] [delay:2 LE] [index FF]
-        out += struct.pack("<4BHB", 0x21, 0xF9, 0x04, 0x05, delay_units, 255)
+        # [21 F9 04] [flags: disposal=2 | transparency] [delay:2 LE] [index FF]
+        out += struct.pack("<4BHB", 0x21, 0xF9, 0x04, 0x09, delay_units, 255)
         out += b"\x00"  # GCE terminator
         out += struct.pack("<B HH HH B", 0x2C, 0, 0, w, h, 0x00)
         out += b"\x08"  # LZW min code size
@@ -486,7 +489,7 @@ def verify_gif(path, expect_frames, expect_delays):
                 if gcb & 1:
                     transparent_flags += 1
                 delays.append(struct.unpack("<H", data[pos + 2 : pos + 4])[0] * 10)
-                assert (gcb >> 2) & 0x07 == 1, f"disposal != 1 at frame {n_img}"
+                assert (gcb >> 2) & 0x07 == 2, f"disposal != 2 at frame {n_img}"
                 pos += 6  # size byte + 4 data + terminator
             elif label == 0xFF:
                 app_len = data[pos]
@@ -657,7 +660,9 @@ def build_neutral(report):
 
 
 def contact_sheet(frames, path, cols=8):
-    """Frames composited on the light-blue stage, 1x, tiled for review."""
+    """Frames composited on the light-blue stage, 1x, tiled for review.
+    Models the device canvas under disposal=2: each frame clears the canvas
+    to transparent and then replaces it, so the tile shows exactly the frame."""
     n = len(frames)
     rows = math.ceil(n / cols)
     gap = 2
@@ -738,16 +743,34 @@ def write_report(report):
     (PACK / "report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_sha256sums():
+    """Refresh raw/SHA256SUMS.txt (provenance of the staged sources)."""
+    import hashlib
+
+    lines = ["# peppa-v1 raw source SHA-256", ""]
+    for f in sorted((PACK / "raw").iterdir()):
+        if f.suffix == ".txt":
+            continue
+        h = hashlib.sha256(f.read_bytes()).hexdigest()
+        lines.append(f"- {f.name}: `{h}`")
+    (PACK / "raw" / "SHA256SUMS.txt").write_text(
+        "\n".join(lines) + "\n", encoding="utf-8")
+
+
 def build():
-    if PACK.exists():
-        shutil.rmtree(PACK)
-    (PACK / "raw").mkdir(parents=True)
-    (PACK / "preview").mkdir(parents=True)
+    # Regenerate outputs in place; README.md and raw/ provenance survive
+    if (PACK / "actions").exists():
+        shutil.rmtree(PACK / "actions")
+    if (PACK / "preview").exists():
+        shutil.rmtree(PACK / "preview")
+    (PACK / "raw").mkdir(parents=True, exist_ok=True)
+    (PACK / "preview").mkdir(parents=True, exist_ok=True)
 
     # self-contained raw sources
     shutil.copy2(NEUTRAL_SRC, PACK / "raw" / "peppa-neutral-source.webp")
     for name, spec in ACTIONS.items():
         shutil.copy2(spec["src"], PACK / "raw" / spec["src"].name)
+    write_sha256sums()
 
     report = {"actions": {}}
     neutral_img = build_neutral(report)
@@ -760,6 +783,9 @@ def build():
     (PACK / "report.json").write_text(
         json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
+    print("\nNOTE: refresh neutral.bin after rebuild:")
+    print("  LVGLImage.py assets/character/peppa-v1/neutral.png --ofmt BIN "
+          "--cf ARGB8888 -o assets/character/peppa-v1/")
 
 
 def main():

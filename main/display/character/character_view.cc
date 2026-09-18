@@ -73,8 +73,6 @@ bool CharacterView::Create() {
     int stage_h = screen_h - top_inset_ - subtitle_h;
     int excess = stage_h - pack_->canvas_h;
     if (excess < 0) {
-        ESP_LOGW(TAG, "canvas %dx%d taller than stage %d, clipped", pack_->canvas_w,
-                 pack_->canvas_h, stage_h);
         excess = 0;
     }
     int image_x = (screen_w - pack_->canvas_w) / 2;
@@ -84,6 +82,18 @@ bool CharacterView::Create() {
     int image_y = excess / 2;
     lv_obj_set_pos(image_, image_x, image_y);
     lv_obj_set_size(image_, pack_->canvas_w, pack_->canvas_h < stage_h ? pack_->canvas_h : stage_h);
+
+    // Canvas taller than the stage: shrink uniformly, anchored bottom-center
+    // so the feet stay on the ground line and nothing essential is clipped
+    int fit_w = (256 * screen_w) / pack_->canvas_w;
+    int fit_h = (256 * stage_h) / pack_->canvas_h;
+    int fit = fit_w < fit_h ? fit_w : fit_h;
+    if (fit < 256) {
+        lv_image_set_pivot(image_, pack_->canvas_w / 2, pack_->canvas_h);
+        lv_image_set_scale(image_, static_cast<uint16_t>(fit));
+        ESP_LOGW(TAG, "canvas %dx%d exceeds stage height %d, scaled to %d%%", pack_->canvas_w,
+                 pack_->canvas_h, stage_h, fit * 100 / 256);
+    }
 
     // Status hint on top of the stage
     hint_label_ = lv_label_create(root_);
@@ -219,13 +229,16 @@ bool CharacterView::PlayAction(const CharacterActionDef* action,
             break;
     }
     play_policy.max_ms = policy.max_ms;
-    gif->SetPlayPolicy(play_policy);
-    gif->SetFrameCallback([this]() { lv_image_set_src(image_, gif_->image_dsc()); });
-    gif->SetFinishedCallback(std::move(on_finished));
 
-    lv_image_set_src(image_, gif->image_dsc());
-    gif->Start();
+    // Own the decoder BEFORE wiring callbacks: the frame callback reads the
+    // gif_ member, and Start() renders the first frame immediately
     gif_ = std::move(gif);
+    gif_->SetPlayPolicy(play_policy);
+    gif_->SetFrameCallback([this]() { lv_image_set_src(image_, gif_->image_dsc()); });
+    gif_->SetFinishedCallback(std::move(on_finished));
+
+    lv_image_set_src(image_, gif_->image_dsc());
+    gif_->Start();
     return true;
 }
 

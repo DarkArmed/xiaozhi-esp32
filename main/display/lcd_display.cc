@@ -1176,11 +1176,14 @@ bool LcdDisplay::SetCharacterMode(const CharacterPackDef* pack) {
         return true;
     }
 
-    auto lvgl_theme = static_cast<LvglTheme*>(current_theme_);
+    // Stage starts below the actual status bar; measure it after a layout pass
     int top_inset = 24;
-    if (lvgl_theme != nullptr && lvgl_theme->text_font() != nullptr &&
-        lvgl_theme->text_font()->font() != nullptr) {
-        top_inset = lvgl_theme->text_font()->font()->line_height + lvgl_theme->spacing(8);
+    if (status_bar_ != nullptr) {
+        lv_obj_update_layout(status_bar_);
+        int status_h = lv_obj_get_height(status_bar_);
+        if (status_h > 0) {
+            top_inset = status_h;
+        }
     }
     character_view_ = std::make_unique<CharacterView>(this, pack, top_inset);
     if (!character_view_->Create()) {

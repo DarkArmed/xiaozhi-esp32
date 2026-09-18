@@ -302,7 +302,10 @@ def process_emoji_collection(emoji_collection_dir, assets_dir):
 
 def process_character_pack(pack_dir, assets_dir):
     """Stage a character pack directory (pack.json + resource files) and return
-    the manifest object for the assets index, or None when unavailable."""
+    the manifest object for the assets index, or None when unavailable.
+    Files are staged FLAT as "<pack_id>_<basename>" because pack_assets_simple
+    only packs top-level files; the manifest's file fields are rewritten to
+    match the staged names."""
     if not pack_dir:
         return None
 
@@ -319,28 +322,45 @@ def process_character_pack(pack_dir, assets_dir):
         print(f"Warning: invalid character pack manifest: {pack_json_path}")
         return None
 
-    def stage(rel_path):
-        rel_path = rel_path.replace("\\", "/")
-        src = os.path.join(pack_dir, rel_path)
-        dst = os.path.join(assets_dir, rel_path)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        return copy_file(src, dst)
+    pack_id = str(character_pack.get("pack_id", "character"))
 
-    neutral = character_pack.get("neutral")
-    if not isinstance(neutral, dict) or not stage(neutral.get("file", "")):
-        print(f"Warning: character pack neutral file missing, pack skipped")
+    def stage(rel_path):
+        if not isinstance(rel_path, str) or not rel_path:
+            return None
+        src = os.path.join(pack_dir, rel_path.replace("\\", "/"))
+        base = os.path.basename(rel_path.replace("\\", "/"))
+        staged_name = f"{pack_id}_{base}"
+        if len(staged_name) > 32:
+            print(f"Warning: staged name {staged_name} exceeds 32 chars, pack skipped")
+            return None
+        if copy_file(src, os.path.join(assets_dir, staged_name)):
+            return staged_name
         return None
 
-    staged = 0
+    neutral = character_pack.get("neutral")
+    staged_neutral = stage(neutral.get("file") if isinstance(neutral, dict) else None)
+    if not staged_neutral:
+        print("Warning: character pack neutral file missing, pack skipped")
+        return None
+    neutral["file"] = staged_neutral
+
+    kept_actions = []
     for action in character_pack.get("actions", []):
-        if isinstance(action, dict) and stage(action.get("file", "")):
-            staged += 1
-    if staged == 0:
+        if not isinstance(action, dict):
+            continue
+        staged_file = stage(action.get("file"))
+        if staged_file:
+            action["file"] = staged_file
+            kept_actions.append(action)
+        else:
+            print(f"Warning: action {action.get('id')} file not staged, dropped")
+    character_pack["actions"] = kept_actions
+    if not kept_actions:
         print("Warning: character pack has no staged actions, pack skipped")
         return None
 
-    print(f"Processed character pack: {character_pack.get('pack_id')} "
-          f"({staged} actions, neutral {neutral.get('file')})")
+    print(f"Processed character pack: {pack_id} "
+          f"({len(kept_actions)} actions, neutral {staged_neutral})")
     return character_pack
 
 

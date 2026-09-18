@@ -320,6 +320,10 @@ void Application::InitCharacterController() {
 #if CONFIG_ENABLE_CHARACTER_DISPLAY
     auto catalog = Assets::GetInstance().character_catalog_shared();
     if (catalog == nullptr || !catalog->valid()) {
+        ESP_LOGW(TAG,
+                 "Character display: pack unavailable (catalog=%p, pack_key_in_index=%d)",
+                 (void*)catalog.get(),
+                 (int)Assets::GetInstance().character_pack_key_present());
         return;  // No pack in assets: keep the built-in emoji path
     }
     if (character_controller_ != nullptr) {
@@ -332,6 +336,7 @@ void Application::InitCharacterController() {
     }
     auto display = Board::GetInstance().GetDisplay();
     if (display == nullptr || !display->SupportsCharacterDisplay()) {
+        ESP_LOGW(TAG, "Character display: display layer rejects capability");
         return;
     }
     character_catalog_attached_ = catalog;
@@ -339,8 +344,9 @@ void Application::InitCharacterController() {
         display, catalog, [this](std::function<void()> callback) {
             Schedule(std::move(callback));
         });
-    ESP_LOGI(TAG, "Character controller active (pack %s)",
-             catalog->pack()->pack_id.c_str());
+    ESP_LOGI(TAG, "Character controller active (pack %s, valid=%d, view=%p)",
+             catalog->pack()->pack_id.c_str(), (int)catalog->valid(),
+             (void*)character_controller_->valid());
 #endif
 }
 

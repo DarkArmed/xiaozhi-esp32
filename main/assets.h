@@ -53,6 +53,8 @@ public:
     inline std::shared_ptr<CharacterCatalog> character_catalog_shared() const {
         return character_catalog_;
     }
+    // True when the last Apply saw a character_pack key in the assets index
+    inline bool character_pack_key_present() const { return character_pack_key_present_; }
 
 private:
     Assets();
@@ -110,6 +112,7 @@ protected:
     std::string default_assets_url_;
     TextFontCapability text_font_capability_;
     std::shared_ptr<CharacterCatalog> character_catalog_;
+    bool character_pack_key_present_ = false;
     srmodel_list_t* models_list_ = nullptr;
 };
 

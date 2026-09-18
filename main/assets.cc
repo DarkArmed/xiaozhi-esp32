@@ -367,6 +367,7 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
 
     // Optional character pack, coexists with emoji_collection (section 12)
     cJSON* character_pack = cJSON_GetObjectItem(root.get(), "character_pack");
+    assets->character_pack_key_present_ = cJSON_IsObject(character_pack);
     if (cJSON_IsObject(character_pack)) {
         auto resolver = [assets](const std::string& name, const uint8_t** data,
                                  size_t* size) -> bool {
