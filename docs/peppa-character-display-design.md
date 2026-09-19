@@ -1,8 +1,8 @@
 # CoreS3 佩奇角色显示技术设计
 
-版本：v1，2026-09-17。状态：设计完成；第一阶段（素材统一加工与资源包）已完成，固件/服务端未实现。
+版本：v1，2026-09-17。状态：设计完成；第一、二阶段完成并经 CoreS3 真机验证；动作触发已打通端到端（语音"跳个舞"→GLM→设备动画），实现走**设备 MCP 工具**路线，对 §8 服务端工具路线的偏离见 §15。服务端零代码改动。
 
-本轮产物包括素材原文件、统一画布资源包 `assets/character/peppa-v1/`（含浅蓝底逐帧预览与制作报告）、制作工具 `scripts/character_pack_tools/` 和本设计。尚未修改固件、服务端配置或协议实现，未生成新固件或刷机。
+本轮产物包括素材原文件、统一画布资源包 `assets/character/peppa-v1/`（含浅蓝底逐帧预览与制作报告）、制作工具 `scripts/character_pack_tools/`、固件角色模块与 MCP 工具、本设计。已生成新固件（版本 2.5.1-peppa.1）并刷机验证。
 
 ## 1. 已确定的产品行为
 
@@ -292,6 +292,10 @@ v1 为句子边界附近同步：动作消息随第一句 TTS 发送路径发出
 
 已完成：素材搜索与下载、neutral 原图视觉和 Alpha 检查、既有代码接口核对、本设计文档、第一阶段素材加工——neutral 与五个动作已统一到 256×168 画布并产出 `assets/character/peppa-v1/` 资源包（浅蓝底逐帧预览、pack.json 清单、尺寸/容量报告、raw 素材哈希，制作工具在 `scripts/character_pack_tools/`）。资源包所有 GIF 经结构校验、按 gifdec 语义的主机解码回读与 Pillow 解码三方验证；muddy_jump 与 play_with_george 因泥点飞溅跨满源画布、双人+床为互动整体，按"整体缩小到舞台内并记录各自变换"处理（缩放 0.525 / 0.375），未套用 128 px 站立高。
 
-尚未执行：GIF 背景叠加到固件、neutral 转 LVGL Alpha CBin 的固件打包接入、程序实现、GLM 工具可用性验证、编译、自动测试、真机性能测试和部署。
+第二阶段：`main/display/character/`（Catalog/Controller/View）、LvglGif 播放策略与完成事件、Assets 可选 character_pack 索引、Display 可选能力、neutral 转 LVGL ARGB8888 BIN，真机修复（GIF disposal=2、MCP 回调空指针、贴纸白边去保护皮肤、动作文件扁平化入 assets）。
+
+第三阶段（实现期偏离记录）：动作触发的最终实现走**设备 MCP 工具** `self.character.play_action`（GLM 经既有 function_call+MCP 通道调用），服务端零代码改动——这是对 §8 服务端工具路线的替代：无需改 xiaozhi-server 仓库，代价是没有服务端策略校验与 §9 的 epoch/第一句绑定（§9 协议扩展代码已写入固件并随 hello 上报，处于休眠态，服务端路线若将来落地可直接启用）。前置条件是管理端把智能体意图模块设为 function_call（nointent 下 LLM 看不到任何工具）。真机 E2E 已验证：语音"跳个舞"→ GLM 调用工具 → 设备返回 true → 佩奇跳舞。
+
+尚未执行：§14 第四阶段完整验收（30 分钟音频+GIF 并发压测、打断场景矩阵、无屏/OLED 代表性构建）、天气/新闻等插件在 glm-4-flash 下的工具调用意愿优化、PR 与部署。
 
 设计已给出缺素材、无模型工具支持、协议不兼容及加载失败时的确定回退，不以这些外部条件作为普通中文聊天的前置依赖。

@@ -1,0 +1,68 @@
+[
+  {
+    "name": "standing-a",
+    "file": "standing-a.png",
+    "source": "https://www.clipartmax.com/middle/m2H7K9K9H7H7A0H7_peppa-pig-transparent-png-peppa-pig-png/",
+    "download": "https://www.clipartmax.com/png/middle/233-2335728_peppa-pig-transparent-png-peppa-pig-png.png",
+    "width": 840,
+    "height": 422,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha_extrema": [
+      255,
+      255
+    ],
+    "bbox": [
+      0,
+      0,
+      840,
+      422
+    ],
+    "bytes": 67215,
+    "sha256": "125f0de55013e86b19c99349915bc7244b86cacdc75667ed3a4e8b22579cce38"
+  },
+  {
+    "name": "standing-b",
+    "file": "standing-b.png",
+    "source": "https://www.clipartmax.com/middle/m2i8d3m2Z5K9b1K9_profile-clipart-pig-peppa-pig/",
+    "download": "https://www.clipartmax.com/png/middle/157-1570739_profile-clipart-pig-peppa-pig.png",
+    "width": 840,
+    "height": 964,
+    "format": "JPEG",
+    "mode": "RGB",
+    "alpha_extrema": [
+      255,
+      255
+    ],
+    "bbox": [
+      0,
+      0,
+      840,
+      964
+    ],
+    "bytes": 207219,
+    "sha256": "d6d99547521f5b7b656e94004e73a0ffdc3448f5625fd29762ab926caafae66e"
+  },
+  {
+    "name": "standing-c",
+    "file": "standing-c.png",
+    "source": "https://toppng.com/show_download/273536/eppa-pig",
+    "download": "https://toppng.com/uploads/preview/eppa-pig-11563530286k4ztrbzmnh.png",
+    "width": 840,
+    "height": 859,
+    "format": "PNG",
+    "mode": "RGBA",
+    "alpha_extrema": [
+      255,
+      255
+    ],
+    "bbox": [
+      0,
+      0,
+      840,
+      859
+    ],
+    "bytes": 184046,
+    "sha256": "386cd5c544a6014d447c06bed3097280b217a784f3b0dcfd2db2e4960a314f7f"
+  }
+]

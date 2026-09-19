@@ -1,0 +1,24 @@
+{
+  "file": "peppa-neutral-source.webp",
+  "source": "https://peppapig.fandom.com/wiki/Peppa_Pig_(character)",
+  "download": "https://static.wikia.nocookie.net/peppapig/images/6/61/Peppa_Pig.png/revision/latest?cb=20240627160159",
+  "width": 1920,
+  "height": 1920,
+  "format": "WEBP",
+  "mode": "RGBA",
+  "alpha_extrema": [
+    0,
+    255
+  ],
+  "bbox": [
+    271,
+    51,
+    1642,
+    1867
+  ],
+  "bytes": 85060,
+  "sha256": "74976b45c85593e23276cf180f8e4d418978c21d3c538ae7e97737e8016fce85",
+  "status": "selected_source",
+  "review": "单人全身站立、闭嘴微笑、无道具、无文字、真实透明通道。原图边缘有少量灰色像素，需在设备缩放阶段核对。保留原始像素，尚未转换为设备运行资源。",
+  "source_type": "community_wiki_not_official"
+}
