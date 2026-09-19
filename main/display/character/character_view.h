@@ -10,7 +10,6 @@
 
 class Display;
 class LvglGif;
-class LvglCBinImage;
 
 /**
  * LVGL layout for the character mode: light-blue stage with one character
@@ -53,7 +52,11 @@ private:
     lv_obj_t* hint_label_ = nullptr;
     lv_obj_t* subtitle_label_ = nullptr;
     std::unique_ptr<LvglGif> gif_;
-    std::unique_ptr<LvglCBinImage> neutral_image_;
+    // Neutral is a standard LVGL v9 BIN file (12-byte header + ARGB8888
+    // pixels) mapped straight out of the assets partition; the descriptor
+    // references it in place, no copy.
+    lv_img_dsc_t neutral_dsc_{};
+    bool neutral_loaded_ = false;
 };
 
 #endif  // CHARACTER_VIEW_H

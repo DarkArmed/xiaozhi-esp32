@@ -29,7 +29,9 @@
 
 官网角色页的图带白色装饰块，且人物为跳跃姿势，故不作 neutral。另三个下载候选的棋盘格实际属于图片像素，不是真透明，均不选。
 
-第一版制作时将此原图转换为带 Alpha 的 LVGL 静态二进制图像，使用现有 `LvglCBinImage` 路径；不要求设备新增 WebP 解码器。neutral 常驻内存，以便动画切换失败时立即显示。
+第一版制作时将此原图转换为带 Alpha 的 LVGL 静态二进制图像（`LVGLImage.py --ofmt BIN --cf ARGB8888` 产出的标准 LVGL v9 BIN：12 字节 `lv_image_header_t` + 原始 ARGB8888 像素）；不要求设备新增 WebP 解码器。neutral 常驻内存，以便动画切换失败时立即显示。
+
+注意：标准 LVGL BIN 不能走 `LvglCBinImage`——它消费的是 cbin 序列化 `lv_image_dsc_t` 容器（指针字段存偏移），两者头部恰好重叠、无法靠解析发现错配。固件侧由 `CharacterView::ParseNeutralBin` 按 `lvgl-bin-argb8888` 声明严格校验并就地引用像素数据。
 
 ## 3. 素材清单与制作规范
 

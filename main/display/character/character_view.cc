@@ -5,9 +5,8 @@
 #include <esp_log.h>
 
 #include "../display.h"
-#include "../lvgl_display/lvgl_image.h"
-#include "../lvgl_display/lvgl_theme.h"
 #include "../lvgl_display/gif/lvgl_gif.h"
+#include "../lvgl_display/lvgl_theme.h"
 
 #define TAG "CharacterView"
 
@@ -15,6 +14,56 @@ namespace {
 
 constexpr int kSubtitleHeight = 48;   // Subtitle area at the bottom (design section 4)
 constexpr int kMaxActionFrames = 64;  // Runtime safety net for canvas checks
+// LVGL v9 image header size (sizeof(lv_image_header_t), three 32-bit words)
+constexpr size_t kLvglHeaderSize = 12;
+
+// The pack declares the neutral as "lvgl-bin-argb8888": a standard LVGL v9
+// BIN file - 12-byte lv_image_header_t followed by raw ARGB8888 pixels.
+// Validate every field so a mismatched file fails loudly here instead of
+// rendering nothing (or garbage) at runtime.
+bool ParseNeutralBin(const CharacterPackDef* pack, lv_img_dsc_t* dsc) {
+    const auto& neutral = pack->neutral;
+    if (neutral.data == nullptr || neutral.size < kLvglHeaderSize) {
+        ESP_LOGE(TAG, "Neutral %s too small (%u bytes)", neutral.file.c_str(),
+                 static_cast<unsigned>(neutral.size));
+        return false;
+    }
+    memcpy(&dsc->header, neutral.data, kLvglHeaderSize);
+    if (dsc->header.magic != LV_IMAGE_HEADER_MAGIC) {
+        ESP_LOGE(TAG, "Neutral %s bad magic 0x%x, expected 0x%x (lvgl-bin-argb8888 file?)",
+                 neutral.file.c_str(), dsc->header.magic, LV_IMAGE_HEADER_MAGIC);
+        return false;
+    }
+    if (dsc->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+        ESP_LOGE(TAG, "Neutral %s color format %d, expected %d (ARGB8888)", neutral.file.c_str(),
+                 dsc->header.cf, LV_COLOR_FORMAT_ARGB8888);
+        return false;
+    }
+    if (dsc->header.w != static_cast<uint32_t>(neutral.width) ||
+        dsc->header.h != static_cast<uint32_t>(neutral.height) || neutral.width != pack->canvas_w ||
+        neutral.height != pack->canvas_h) {
+        ESP_LOGE(TAG, "Neutral %s %ux%u does not match pack canvas %dx%d", neutral.file.c_str(),
+                 dsc->header.w, dsc->header.h, pack->canvas_w, pack->canvas_h);
+        return false;
+    }
+    if (dsc->header.stride < dsc->header.w * 4) {
+        ESP_LOGE(TAG, "Neutral %s stride %u too small for %ux%u ARGB8888", neutral.file.c_str(),
+                 dsc->header.stride, dsc->header.w, dsc->header.h);
+        return false;
+    }
+    dsc->data = neutral.data + kLvglHeaderSize;
+    dsc->data_size = neutral.size - kLvglHeaderSize;
+    if (dsc->data_size < static_cast<size_t>(dsc->header.stride) * dsc->header.h) {
+        ESP_LOGE(TAG, "Neutral %s payload %u bytes, need %u", neutral.file.c_str(),
+                 static_cast<unsigned>(dsc->data_size),
+                 static_cast<unsigned>(dsc->header.stride * dsc->header.h));
+        return false;
+    }
+    ESP_LOGI(TAG, "Neutral %s: %ux%u cf=%d stride=%u, %u pixel bytes", neutral.file.c_str(),
+             dsc->header.w, dsc->header.h, dsc->header.cf, dsc->header.stride,
+             static_cast<unsigned>(dsc->data_size));
+    return true;
+}
 
 // Minimal descriptor so LvglGif can open GIF data straight from the assets map
 lv_img_dsc_t MakeRawDescriptor(const uint8_t* data, size_t size) {
@@ -34,9 +83,7 @@ bool IsGifData(const uint8_t* data, size_t size) {
 CharacterView::CharacterView(Display* display, const CharacterPackDef* pack, int top_inset)
     : display_(display), pack_(pack), top_inset_(top_inset) {}
 
-CharacterView::~CharacterView() {
-    Destroy();
-}
+CharacterView::~CharacterView() { Destroy(); }
 
 bool CharacterView::Create() {
     if (root_ != nullptr || pack_ == nullptr || !pack_->valid) {
@@ -114,13 +161,12 @@ bool CharacterView::Create() {
     lv_obj_align(subtitle_label_, LV_ALIGN_BOTTOM_MID, 0, -2);
 
     // Static neutral, kept resident so animation failures can fall back
-    neutral_image_ = std::make_unique<LvglCBinImage>(const_cast<uint8_t*>(pack_->neutral.data));
-    if (neutral_image_->image_dsc() == nullptr) {
-        ESP_LOGE(TAG, "Failed to parse neutral image %s", pack_->neutral.file.c_str());
+    neutral_loaded_ = ParseNeutralBin(pack_, &neutral_dsc_);
+    if (!neutral_loaded_) {
         Destroy();
         return false;
     }
-    lv_image_set_src(image_, neutral_image_->image_dsc());
+    lv_image_set_src(image_, &neutral_dsc_);
 
     lv_obj_add_flag(root_, LV_OBJ_FLAG_HIDDEN);
     return true;
@@ -129,7 +175,7 @@ bool CharacterView::Create() {
 void CharacterView::Destroy() {
     // Detach LVGL from the GIF canvas before releasing the decoder (section 11)
     gif_.reset();
-    neutral_image_.reset();
+    neutral_loaded_ = false;
     if (root_ != nullptr) {
         lv_obj_delete(root_);
         root_ = nullptr;
@@ -167,14 +213,13 @@ void CharacterView::SetSubtitle(const char* text) {
 
 void CharacterView::ShowNeutral() {
     // Detach the GIF canvas before releasing the decoder (section 11)
-    if (image_ != nullptr && neutral_image_ != nullptr) {
-        lv_image_set_src(image_, neutral_image_->image_dsc());
+    if (image_ != nullptr && neutral_loaded_) {
+        lv_image_set_src(image_, &neutral_dsc_);
     }
     gif_.reset();
 }
 
-bool CharacterView::PlayAction(const CharacterActionDef* action,
-                               const CharacterPlaybackDef& policy,
+bool CharacterView::PlayAction(const CharacterActionDef* action, const CharacterPlaybackDef& policy,
                                std::function<void(bool error)> on_finished) {
     if (image_ == nullptr || action == nullptr || action->data == nullptr) {
         return false;
@@ -192,8 +237,8 @@ bool CharacterView::PlayAction(const CharacterActionDef* action,
     uint16_t gif_h = static_cast<uint16_t>(action->data[8] | (action->data[9] << 8));
     if (gif_w != static_cast<uint16_t>(pack_->canvas_w) ||
         gif_h != static_cast<uint16_t>(pack_->canvas_h)) {
-        ESP_LOGE(TAG, "Action %s canvas %dx%d does not match pack %dx%d", action->id.c_str(),
-                 gif_w, gif_h, pack_->canvas_w, pack_->canvas_h);
+        ESP_LOGE(TAG, "Action %s canvas %dx%d does not match pack %dx%d", action->id.c_str(), gif_w,
+                 gif_h, pack_->canvas_w, pack_->canvas_h);
         return false;
     }
     if (action->frames > kMaxActionFrames) {
@@ -202,8 +247,8 @@ bool CharacterView::PlayAction(const CharacterActionDef* action,
     }
 
     // Detach LVGL from the previous canvas, then release the old decoder
-    if (neutral_image_ != nullptr) {
-        lv_image_set_src(image_, neutral_image_->image_dsc());
+    if (neutral_loaded_) {
+        lv_image_set_src(image_, &neutral_dsc_);
     }
     gif_.reset();
 
@@ -242,6 +287,4 @@ bool CharacterView::PlayAction(const CharacterActionDef* action,
     return true;
 }
 
-void CharacterView::StopAction() {
-    ShowNeutral();
-}
+void CharacterView::StopAction() { ShowNeutral(); }
