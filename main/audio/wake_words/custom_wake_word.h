@@ -2,19 +2,19 @@
 #define CUSTOM_WAKE_WORD_H
 
 #include <esp_attr.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <esp_mn_iface.h>
 #include <esp_mn_models.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <model_path.h>
 
+#include <atomic>
+#include <condition_variable>
 #include <deque>
-#include <string>
-#include <vector>
 #include <functional>
 #include <mutex>
-#include <condition_variable>
-#include <atomic>
+#include <string>
+#include <vector>
 
 #include "audio_codec.h"
 #include "wake_word.h"
@@ -46,14 +46,14 @@ private:
     // multinet 相关成员变量
     esp_mn_iface_t* multinet_ = nullptr;
     model_iface_data_t* multinet_model_data_ = nullptr;
-    srmodel_list_t *models_ = nullptr;
+    srmodel_list_t* models_ = nullptr;
     bool owns_models_ = false;
     char* mn_name_ = nullptr;
     std::string language_ = "cn";
     int duration_ = 3000;
     float threshold_ = 0.2;
     std::deque<Command> commands_;
- 
+
     std::function<void(const std::string& wake_word)> wake_word_detected_callback_;
     AudioCodec* codec_ = nullptr;
     std::string last_detected_wake_word_;
@@ -69,7 +69,17 @@ private:
     std::mutex wake_word_mutex_;
     std::condition_variable wake_word_cv_;
 
+    // MultiNet inference runs on its own task so the AFE fetch loop (which
+    // also drives wakenet in the dual wake word configuration) keeps up with
+    // the audio stream. FeedSamples only enqueues chunks and notifies.
+    TaskHandle_t detection_task_ = nullptr;
+    StaticTask_t* detection_task_buffer_ = nullptr;
+    StackType_t* detection_task_stack_ = nullptr;
+    size_t mn_chunksize_ = 0;
+    size_t dropped_chunks_ = 0;
+
     void FeedSamples(const int16_t* data, size_t samples, bool mono);
+    void DetectionTask();
     void ParseWakenetModelConfig();
 };
 

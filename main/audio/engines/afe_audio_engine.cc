@@ -15,6 +15,20 @@
 
 #define TAG "AfeAudioEngine"
 
+// Logs every failed heap allocation with the current free/largest numbers for
+// both memory types, so memory-exhaustion crashes inside the esp-sr prebuilt
+// libraries (which do not check allocation results) become diagnosable.
+static void OnFailedAlloc(size_t size, uint32_t caps, const char* failed_func) {
+    ESP_LOGE("HEAP_DIAG",
+             "FAILED ALLOC size=%u caps=0x%x in %s internal(free=%u largest=%u) psram(free=%u "
+             "largest=%u)",
+             (unsigned)size, (unsigned)caps, failed_func ? failed_func : "?",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+}
+
 #if CONFIG_USE_AUDIO_PROCESSOR
 static constexpr bool kUseAfeForVoiceProcessing = true;
 #else
@@ -63,6 +77,17 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
     frame_samples_ = frame_duration_ms * 16000 / 1000;
     output_buffer_.reserve(frame_samples_);
 
+    static bool failed_alloc_hook_installed = false;
+    if (!failed_alloc_hook_installed) {
+        heap_caps_register_failed_alloc_callback(OnFailedAlloc);
+        failed_alloc_hook_installed = true;
+    }
+    ESP_LOGI(TAG, "Engine init start: internal(free=%u largest=%u) psram(free=%u largest=%u)",
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+
     if (models_list == nullptr) {
         models_ = esp_srmodel_init("model");
         owns_models_ = models_ != nullptr;
@@ -80,7 +105,22 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         }
     }
 
-    if (multinet_model_name != nullptr) {
+    if (multinet_model_name != nullptr && wakenet_model_name != nullptr) {
+        // Standard esp-sr usage: AFE runs the wakenet on the safe fetch path
+        // while MultiNet spots the custom phrase on the fetched frames.
+        wake_detector_ = WakeDetector::kWakeNet;
+        custom_wake_word_ = std::make_unique<CustomWakeWord>();
+        custom_wake_word_->OnWakeWordDetected([this](const std::string& wake_word) {
+            last_detected_wake_word_ = wake_word;
+            if (wake_word_detected_callback_) {
+                wake_word_detected_callback_(wake_word);
+            }
+        });
+        if (!custom_wake_word_->Initialize(codec_, models_)) {
+            ESP_LOGE(TAG, "Failed to initialize MultiNet wake-word detector");
+            custom_wake_word_.reset();
+        }
+    } else if (multinet_model_name != nullptr) {
         wake_detector_ = WakeDetector::kMultiNet;
         custom_wake_word_ = std::make_unique<CustomWakeWord>();
         custom_wake_word_->OnWakeWordDetected([this](const std::string& wake_word) {
@@ -99,6 +139,12 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
         }
     } else if (wakenet_model_name != nullptr) {
         wake_detector_ = WakeDetector::kWakeNet;
+    }
+
+    if (wakenet_model_name != nullptr) {
+        // Wakenet detections can fire in both the wakenet-only and the dual
+        // (wakenet + MultiNet custom phrase) configurations, so the wake word
+        // list and the upload cache are populated for both.
         for (int i = 0; i < models_->num; ++i) {
             char* name = models_->model_name[i];
             if (name == nullptr || strncmp(name, ESP_WN_PREFIX, strlen(ESP_WN_PREFIX)) != 0) {
@@ -140,15 +186,22 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
 
     char* vad_model_name =
         models_ == nullptr ? nullptr : esp_srmodel_filter(models_, ESP_VADN_PREFIX, nullptr);
+    // The Multinet custom wake path runs the AFE pipeline with wakenet_init
+    // disabled; esp-sr only allocates the fetch ring buffers for that case in
+    // the VC voice-command configuration. The FD low-cost pipeline crashes in
+    // afe_fetch (NULL ring buffer) when no wakenet model is attached, so keep
+    // the proven VC/high-performance combination for Multinet only.
+    bool multinet_wake = wake_detector_ == WakeDetector::kMultiNet;
     afe_config_t* afe_config =
-        afe_config_init(input_format.c_str(), models_, AFE_TYPE_FD, AFE_MODE_LOW_COST);
+        afe_config_init(input_format.c_str(), models_, multinet_wake ? AFE_TYPE_VC : AFE_TYPE_FD,
+                        multinet_wake ? AFE_MODE_HIGH_PERF : AFE_MODE_LOW_COST);
     if (afe_config == nullptr) {
         ESP_LOGE(TAG, "Failed to create AFE configuration");
         return false;
     }
 
     afe_config->aec_init = codec_->input_reference();
-    afe_config->aec_mode = AEC_MODE_FD_LOW_COST;
+    afe_config->aec_mode = multinet_wake ? AEC_MODE_VOIP_HIGH_PERF : AEC_MODE_FD_LOW_COST;
     afe_config->aec_nlp_level = AEC_NLP_LEVEL_VERYAGGR;
     afe_config->ns_init = false;
     afe_config->vad_init = kUseAfeForVoiceProcessing;
@@ -178,10 +231,13 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
     afe_config->agc_init = false;
     afe_config->memory_alloc_mode = AFE_MEMORY_ALLOC_MORE_PSRAM;
 
-    ESP_LOGI(TAG, "Before AFE create: free=%u min=%u largest=%u",
+    ESP_LOGI(TAG,
+             "Before AFE create: internal(free=%u min=%u largest=%u) psram(free=%u largest=%u)",
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     afe_iface_ = esp_afe_handle_from_config(afe_config);
     if (afe_iface_ != nullptr) {
         afe_data_ = afe_iface_->create_from_config(afe_config);
@@ -242,10 +298,12 @@ bool AfeAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms,
                                : (wake_detector_ == WakeDetector::kMultiNet ? "MultiNet" : "none");
     ESP_LOGI(TAG, "Initialized FD AFE, detector: %s, NS: off, feed: %d, fetch: %d", detector,
              afe_iface_->get_feed_chunksize(afe_data_), afe_iface_->get_fetch_chunksize(afe_data_));
-    ESP_LOGI(TAG, "After AFE create: free=%u min=%u largest=%u",
+    ESP_LOGI(TAG, "After AFE create: internal(free=%u min=%u largest=%u) psram(free=%u largest=%u)",
              heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
              heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+             heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL),
+             heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     return true;
 }
 
@@ -278,13 +336,13 @@ void AfeAudioEngine::EnableWakeWordDetection(bool enable) {
     // WakeNet enable/disable on the AFE instance is applied by ProcessingTask
     // (see ApplyAfeControls), driven by the kWakeWordEnabled bit.
     if (enable) {
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Start();
         }
         xEventGroupSetBits(event_group_, kWakeWordEnabled);
     } else {
         xEventGroupClearBits(event_group_, kWakeWordEnabled);
-        if (wake_detector_ == WakeDetector::kMultiNet) {
+        if (custom_wake_word_ != nullptr) {
             custom_wake_word_->Stop();
         }
     }
@@ -442,9 +500,11 @@ void AfeAudioEngine::ProcessingTask() {
 }
 
 void AfeAudioEngine::HandleWakeWordResult(const afe_fetch_result_t* result) {
-    if (wake_detector_ == WakeDetector::kMultiNet) {
+    if (custom_wake_word_ != nullptr) {
         custom_wake_word_->FeedMono(result->data, result->data_size / sizeof(int16_t));
-        return;
+        if (wake_detector_ != WakeDetector::kWakeNet) {
+            return;
+        }
     }
 
 #if CONFIG_SEND_WAKE_WORD_DATA
